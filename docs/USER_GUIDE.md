@@ -22,29 +22,31 @@ hermes plugins enable capalis
 Capalis talks to people through Hermes's own connections, so connect the apps you use first:
 
 ```bash
-hermes gateway setup     # choose Telegram, Discord and/or Slack; it walks you through creating each bot
+hermes gateway setup     # choose Telegram, Discord and/or Slack; it asks for each app's bot token
 hermes gateway install   # keeps Hermes running in the background, even after a restart
 ```
 
+`hermes gateway setup` asks for a bot token for each app you choose. If you don't have one yet, making a bot takes a few minutes: [Telegram](#telegram-bot) · [Discord](#discord-bot) · [Slack](#slack-bot).
+
 Hermes has to keep running for waiting jobs, schedules and alerts, which is why `install` matters. Then, once:
-- On **Telegram**, open your new bot and press **Start**, so it's allowed to message you.
-- In **Slack**, type `/invite @your-bot` in every channel it should read or post in.
-- In **Discord**, the invite link from `hermes gateway setup` adds the bot to your server.
+- On **Telegram**, open your new bot and press **Start**, so it's allowed to message you ([step 5 here](#telegram-bot)).
+- In **Slack**, type `/invite @your-bot` in every channel it should read or post in ([step 5 here](#slack-bot)).
+- In **Discord**, the invite link from `hermes gateway setup` adds the bot to your server ([step 4 here](#discord-bot)).
 
 ## 3. Give Capalis its keys
 
-The easiest place is Hermes Desktop, under **Settings → Plugins → Capalis**. Add only what you use, and never paste a token into a chat.
+The easiest place is Hermes Desktop: open **Settings → Plugins**, then click the gear next to **Capalis**. Add only what you use, and never paste a token into a chat. Each row links to step-by-step instructions.
 
 | Field | What to enter | Stored as |
 | --- | --- | --- |
-| GitHub token | A [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to your repositories, with **Issues: Read and write** | `CAPALIS_GITHUB_TOKEN` |
-| Slack bot token | The bot token Hermes uses (from step 2). It needs `chat:write`, `channels:read`, `channels:history` and `users:read`; the app `hermes gateway setup` creates has them. | `CAPALIS_SLACK_BOT_TOKEN` |
-| Discord bot token | The bot token Hermes uses. In your channel it needs **View Channel**, **Send Messages** and **Read Message History**, and the **Message Content** intent on. | `CAPALIS_DISCORD_BOT_TOKEN` |
-| Telegram bot token | The bot token Hermes uses: your phone's control panel | `CAPALIS_TELEGRAM_BOT_TOKEN` |
-| Approvers | Who may approve from chat, for example `["telegram:123456789"]` | setting |
+| GitHub token | A fine-grained token limited to your repositories, with **Issues: Read and write** ([how to get it](#github-token)) | `CAPALIS_GITHUB_TOKEN` |
+| Slack bot token | The bot token Hermes uses, from step 2 ([how to get it](#slack-bot)). It needs `chat:write`, `channels:read`, `channels:history` and `users:read`; an app made from Hermes's manifest has them. | `CAPALIS_SLACK_BOT_TOKEN` |
+| Discord bot token | The bot token Hermes uses ([how to get it](#discord-bot)). In your channel it needs **View Channel**, **Send Messages** and **Read Message History**, and the **Message Content** intent on. | `CAPALIS_DISCORD_BOT_TOKEN` |
+| Telegram bot token | The bot token Hermes uses: your phone's control panel ([how to get it](#telegram-bot)) | `CAPALIS_TELEGRAM_BOT_TOKEN` |
+| Approvers | Who may approve from chat, for example `["telegram:123456789"]` ([find your id](#your-telegram-user-id)) | setting |
 | Alerts channel | Where Capalis tells you when you're needed: `telegram:123456789` is best, because it's your phone. `slack:#ops` and `discord:#ops` work too. | setting |
 
-Your Telegram user id is the number you gave `hermes gateway setup`. It's also in Hermes's `TELEGRAM_ALLOWED_USERS` setting.
+Your Telegram user id is a number, not your @username. It's the one you gave `hermes gateway setup`, and it's also in Hermes's `TELEGRAM_ALLOWED_USERS` setting. [Here's how to find it](#your-telegram-user-id).
 
 Without Desktop, use the terminal. Tokens go to Hermes's `.env`; settings go to its `config.yaml`:
 
@@ -194,3 +196,56 @@ By default, only someone at the computer running Hermes (CLI, TUI or Desktop) ca
 | "could not find @name" | They haven't posted in that channel yet. Ask them to post once, or give their user id. |
 | A Recipe is quarantined | `/capalis` shows the reason. Ask Hermes to rebuild the Recipe, then approve the new version. |
 | A run is unverified | `/capalis evidence <run>` shows which check failed and why. The write itself may still have happened. |
+
+## Getting each token, step by step
+
+You only need the ones for the apps you use. Each takes a few minutes. Keep tokens private: paste them only into Hermes Desktop's settings or `hermes config set`, never into a chat. If one leaks, make a new one; the steps below show where.
+
+### GitHub token
+
+Capalis uses it to search, open and read issues, and nothing else.
+
+1. Open [github.com/settings/personal-access-tokens/new](https://github.com/settings/personal-access-tokens/new). (Or: your profile picture → **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.)
+2. **Token name:** `capalis`. **Expiration:** whatever your team allows. When it expires, runs fail and Capalis tells you; make a new token and paste it in.
+3. **Repository access:** choose **Only select repositories**, then pick the repository where issues should go.
+4. **Permissions:** add **Issues** and set it to **Read and write**. GitHub adds **Metadata: Read-only** by itself.
+5. Click **Generate token** and copy it. GitHub shows it only once.
+6. Paste it into **GitHub token** ([step 3](#3-give-capalis-its-keys)).
+
+### Telegram bot
+
+**Easiest:** in Hermes Desktop, open **Messaging → Telegram** and press **Create with QR**. Scan the code with your phone; Hermes creates the bot, finds your user id and saves both. Then paste the bot token into Capalis too (step 4 below).
+
+**By hand:**
+
+1. In Telegram, search for **@BotFather** (Telegram's official bot, with a blue check) or open [t.me/BotFather](https://t.me/BotFather), and tap **Start**.
+2. Send `/newbot`.
+3. Send a display name (anything, for example "Acme Capalis"), then a username that ends in `bot` (for example `acme_capalis_bot`).
+4. BotFather replies with a token like `123456789:ABCdef…`. That's the bot token. Give it to `hermes gateway setup`, and paste the same token into **Telegram bot token** for Capalis.
+5. In BotFather's reply, tap the link to your new bot (`t.me/acme_capalis_bot`) and press **Start**. A bot can't message you until you've done this once.
+
+Lost the token? Send `/token` to @BotFather. Leaked it? Send `/revoke`. More detail: [Hermes's Telegram guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/telegram).
+
+### Your Telegram user id
+
+It's a number like `123456789`, not your @username. Open [@userinfobot](https://t.me/userinfobot) in Telegram and tap **Start**; it replies with your id. Use it as `telegram:123456789` in **Alerts channel**, and as `["telegram:123456789"]` in **Approvers**. `hermes gateway setup` asks for the same number when it asks who may use the bot.
+
+### Discord bot
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications), click **New Application**, give it a name, and click **Create**.
+2. Open **Bot** in the sidebar. Under **Privileged Gateway Intents**, turn on **Message Content Intent** and **Server Members Intent**, then click **Save Changes**. Without Message Content, Discord refuses the bot's connection.
+3. Still on **Bot**, click **Reset Token** and copy the token. That's the bot token. Give it to `hermes gateway setup`, and paste the same token into **Discord bot token** for Capalis.
+4. Run `hermes gateway setup` and choose **Discord**. It checks the token and prints an invite link: open it, pick your server, and click **Authorize**.
+5. Make sure the bot can **View Channel**, **Send Messages** and **Read Message History** in your report channel (for example #bugs). If the channel is private, add the bot to it.
+
+More detail: [Hermes's Discord guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/discord).
+
+### Slack bot
+
+1. In a terminal, run `hermes slack manifest --agent-view --write`. It writes a ready-made app description, with every permission Hermes and Capalis need, to `~/.hermes/slack-manifest.json`.
+2. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From an app manifest**. Pick your workspace, paste the file's contents, then click **Next** → **Create**.
+3. Under **Settings → Basic Information → App-Level Tokens**, click **Generate Token and Scopes**, add the `connections:write` scope, and copy the token (it starts with `xapp-`). Hermes needs it to connect; Capalis doesn't.
+4. Under **Settings → Install App**, click **Install to Workspace**, then **Allow**. Copy the **Bot User OAuth Token** (it starts with `xoxb-`). Give both tokens to `hermes gateway setup`, and paste the `xoxb-` one into **Slack bot token** for Capalis.
+5. In Slack, open each channel the bot should read or post in, and type `/invite @` followed by the bot's name.
+
+Your Slack member id (for `SLACK_ALLOWED_USERS`) is printed by `/capalis setup`. You can also open someone's profile, click **⋮**, and choose **Copy member ID**. More detail: [Hermes's Slack guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging/slack).

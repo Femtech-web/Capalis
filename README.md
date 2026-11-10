@@ -16,6 +16,26 @@ Capalis is a plugin for [Hermes Agent](https://github.com/NousResearch/hermes-ag
 
 ---
 
+## Table of contents
+
+- [The problem, in 20 seconds](#the-problem-in-20-seconds)
+- [What changes with Capalis](#what-changes-with-capalis)
+- [See it work](#see-it-work)
+- [Quick start](#quick-start)
+- [Your phone is the control panel](#your-phone-is-the-control-panel)
+- [Who it's for](#who-its-for)
+- [For judges](#for-judges)
+- [Proof: what ran for real](#proof-what-ran-for-real)
+- [How it works](#how-it-works)
+- [What it will never do](#what-it-will-never-do)
+- [Using other Hermes tools](#using-other-hermes-tools)
+- [Commands](#commands) (and [what it touches](#what-it-touches-disclosure))
+- [Engineering decisions & the hard problems](#engineering-decisions--the-hard-problems)
+- [What's real, and what's simulated](#whats-real-and-whats-simulated)
+- [Limits](#limits)
+- [Project layout and development](#project-layout-and-development)
+- [Docs](#docs)
+
 ## The problem, in 20 seconds
 
 You tell your AI agent: *"When a customer reports a bug, open a ticket and tell the team."* It answers **"Done ✅"**.
@@ -75,20 +95,20 @@ hermes gateway setup     # choose Telegram, Discord and/or Slack; it walks you t
 hermes gateway install   # keeps Hermes running in the background, even after a restart
 ```
 
-Then, once:
-- On **Telegram**, open your new bot and press **Start**, so it's allowed to message you.
-- In **Slack**, type `/invite @your-bot` in every channel it should read or post in.
+No bot yet? Making one takes a few minutes: [Telegram](docs/USER_GUIDE.md#telegram-bot) · [Discord](docs/USER_GUIDE.md#discord-bot) · [Slack](docs/USER_GUIDE.md#slack-bot). Then, once:
+- On **Telegram**, open your new bot and press **Start**, so it's allowed to message you ([how](docs/USER_GUIDE.md#telegram-bot)).
+- In **Slack**, type `/invite @your-bot` in every channel it should read or post in ([how](docs/USER_GUIDE.md#slack-bot)).
 
 **3. Give Capalis its keys** (Hermes Desktop → **Settings → Plugins → Capalis**)
 
 | Field | What to enter |
 | --- | --- |
-| GitHub token | A new [fine-grained token](https://github.com/settings/personal-access-tokens/new) for your repository, with **Issues: Read and write** |
+| GitHub token | A new fine-grained token for your repository, with **Issues: Read and write** ([how to get it](docs/USER_GUIDE.md#github-token)) |
 | Slack, Discord and Telegram bot tokens | The same tokens you gave Hermes in step 2. One bot per app is enough. |
-| Approvers | `["telegram:<your Telegram user id>"]`, so you can approve from your phone |
+| Approvers | `["telegram:<your Telegram user id>"]`, so you can approve from your phone ([find your id](docs/USER_GUIDE.md#your-telegram-user-id)) |
 | Alerts channel | `telegram:<your Telegram user id>` |
 
-Your Telegram user id is the number you gave `hermes gateway setup`. Without Desktop, `hermes config set` sets each field ([owner's guide](docs/USER_GUIDE.md#3-give-capalis-its-keys)). Never paste a token into a chat.
+Your Telegram user id is the number you gave `hermes gateway setup`. Without Desktop, `hermes config set` sets each field ([owner's guide](docs/USER_GUIDE.md#3-give-capalis-its-keys)). Never paste a token into a chat. Every token, step by step: [Getting each token](docs/USER_GUIDE.md#getting-each-token-step-by-step).
 
 **4. Describe the job** (any Hermes chat: the terminal or Desktop)
 
