@@ -9,7 +9,7 @@ Everything shown is real: a Hermes chat, the owner's Discord, a GitHub sandbox r
 
 | Time | Shot | What to say or type |
 | --- | --- | --- |
-| 0–8 s | Title | "Teach your AI agent a job once. It does it every time, and proves every step." |
+| 0–8 s | Title | "One sentence. A job you can trust." Then: "Describe a job once. Capalis sets it up, runs it, and checks it really happened." |
 | 8–25 s | Hermes chat | "Set up a Capalis Recipe called bug-reports-demo: when I post a bug in Discord #bugs, open an issue in capalis-sandbox, tell #engineering in Slack, and reply to me when it's closed. Use recommended." The model shows what each name resolved to, compiles, and shadow-runs: **writes simulated, nothing written**. |
 | 25–35 s | Phone (Telegram) | The "ready for your approval" message arrives on the phone. Reply `/capalis approve` and tap **1** (Approve). "Only I can approve, only the version I was shown, and I can do it from anywhere." |
 | 35–50 s | Discord → GitHub → Slack → Discord | Post "Checkout button does nothing on Safari" in `#bugs`. Cut to the new issue, then the Slack notice, then the reply under the Discord message: "tracked as #N". |

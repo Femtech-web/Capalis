@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="docs/assets/cover.png" alt="Capalis: agents that prove they're done" width="100%" />
+<img src="docs/assets/cover.png" alt="Capalis: one sentence becomes a job you can trust. A request in Hermes becomes an issue in GitHub, a Slack message and a reply in Discord, each one checked." width="100%" />
 
-### Teach your AI agent a job once. It does it every time, and proves every step.
+### Describe a job once. Capalis sets it up, runs it, and checks it really happened.
 
-Capalis is a plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent). It turns one sentence into an approved workflow that runs on its own. It checks each thing it does by reading the result back, and it stops itself the moment anything changes.
+Capalis is a plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent). Say what you want in plain words. It picks the right tools, you approve once, and the job runs on its own. Every result is checked where it landed, and the job stops itself if anything it depends on changes.
 
 **[Quick start](#quick-start)** &nbsp;·&nbsp; **[See it work](#see-it-work)** &nbsp;·&nbsp; **[For judges](#for-judges)** &nbsp;·&nbsp; **[Owner's guide](docs/USER_GUIDE.md)**
 
@@ -20,6 +20,7 @@ Capalis is a plugin for [Hermes Agent](https://github.com/NousResearch/hermes-ag
 
 - [The problem, in 20 seconds](#the-problem-in-20-seconds)
 - [What changes with Capalis](#what-changes-with-capalis)
+- [What makes it different](#what-makes-it-different)
 - [See it work](#see-it-work)
 - [Quick start](#quick-start)
 - [Your phone is the control panel](#your-phone-is-the-control-panel)
@@ -38,22 +39,36 @@ Capalis is a plugin for [Hermes Agent](https://github.com/NousResearch/hermes-ag
 
 ## The problem, in 20 seconds
 
-You tell your AI agent: *"When a customer reports a bug, open a ticket and tell the team."* It answers **"Done ✅"**.
+You want one simple job done across your apps: *"When a customer reports a bug, open a ticket and tell the team."*
 
-But the ticket duplicates yesterday's. The message went to the wrong channel. The network hiccupped, so it posted twice. Next week the token expires, it quietly stops working, and it keeps saying "Done".
+**Setting it up is the first wall.** Which tool does what? What's the channel's id? Which permissions? Most people give up, or hand the job to an AI agent.
 
-Nothing checked, and nobody noticed. That's the gap between an agent that *calls tools* and one you can *trust with a job*.
+**Trusting it is the second.** The agent answers **"Done ✅"**. But the ticket duplicates yesterday's, the message went to the wrong channel, and a network hiccup posted it twice. Next week a token expires, the job quietly stops, and the agent keeps saying "Done".
+
+Capalis removes both walls. Setting a job up is a conversation, and "done" means it actually happened.
 
 ## What changes with Capalis
 
 | Without Capalis | With Capalis |
 | --- | --- |
-| "Done" means the tool said OK | **"Verified"** means GitHub, Slack or Discord confirmed it, read back by a separate check |
+| You need to know which tool, which ids and which permissions | **Say it in plain words.** Capalis finds #bugs and my-app by name and works out the steps |
+| You guess which tool to use | **It recommends one and says why**, or you compare the options first. For example, a Slack webhook can't be read back, so it suggests the Slack bot. When the evidence is too thin to pick, it says so instead of ranking. |
+| You re-explain the job every time | **Say it once, approve it once**, and it runs on its own |
+| "Done" means the tool said OK | **"Verified"** means GitHub, Slack or Discord confirmed it, read back by a separate check. If it can't check, it says so. |
 | A retry after a timeout does it twice | Every action is written down first and looked up before any retry. **Never twice.** |
 | A changed token or API breaks silently | It notices, **stops itself**, and tells you on your phone |
 | One sneaky message can redirect the agent | Where it acts is **fixed when you approve**; what people type can't change it |
-| You re-explain the job every time | **Say it once, approve it once**, and it runs on its own |
 | You can't tell what it actually did | One command shows **every step and the proof behind it** |
+
+## What makes it different
+
+Many agent tools now check a single action after the fact: did the payment land, did the message post. Capalis checks too, but checking is the smallest part. It owns the whole job:
+
+- **It builds the job.** One sentence becomes a Recipe: the steps, fixed destinations, limits, and a check for every write. You approve that exact version, and any change needs a new approval.
+- **It runs the job without you.** A message in Discord or Slack, or a schedule, starts it. It waits for later events, like an issue being closed, and follows up, even across restarts.
+- **It acts carefully.** Before every write it re-checks your approval, any pause, the limits and its dependencies, and writes its intent down first. An uncertain write is looked up, never repeated.
+- **It stays honest over time.** When a token, a permission or a tool changes, the Recipe stops itself and asks you to rebuild it and approve again.
+- **You run it from your phone.** Approvals, alerts and status all happen in Telegram.
 
 ## See it work
 
