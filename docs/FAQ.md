@@ -16,7 +16,13 @@ Their text fills slots in the issue and the messages; nothing more. Where Capali
 Capalis records each write before sending it. If it can't tell whether the write landed, it looks it up by a hidden key. GitHub, Slack and Discord each have one: a marker, message metadata, or the reply itself. It retries only once a settle window has passed and the write still isn't there. If the service offers no way to look it up, Capalis stops and asks you.
 
 **Does it work with tools from other plugins?**
-They show up in comparisons. They can't run inside a Recipe until a contract test has characterized what they do and how to check it. Making that easy for plugin authors is on the [roadmap](ROADMAP.md).
+Yes, for tools that read. The model proposes a *capability contract*, you run `/capalis contract test` (one real call through Hermes), and then `/capalis contract approve`. After that, the tool can be a step in a Recipe or an independent check on another service's write. Tools that change things are refused for now: they need a sandbox test and an independent read-back first ([roadmap](ROADMAP.md)).
+
+**Can it run on a schedule?**
+Yes: "every weekday at 9" or "every 10 minutes", in UTC. Each slot runs once, even across restarts. After downtime, only the latest missed slot runs. Schedules need the Hermes gateway running.
+
+**How do I know when something needs me?**
+Set the Alerts channel (for example `slack:#ops`). Capalis posts there when a Recipe is quarantined, a write couldn't be checked, a step waits for confirmation, or a run fails. Each post comes with the exact command to type.
 
 **Where is my data?**
 In one SQLite file under Hermes's plugin data folder. Payloads are redacted before they're stored. Nothing is sent anywhere except the GitHub, Slack and Discord calls your Recipes make, and there is no telemetry.

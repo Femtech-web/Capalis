@@ -3,7 +3,7 @@
   "hermes": "v0.23.0 (2bd378ed)",
   "python": "3.13.9",
   "totals": {
-    "passed": 275,
+    "passed": 300,
     "failed": 0,
     "skipped": 1
   },
@@ -110,6 +110,52 @@
         "test_service.py::test_reporter_hears_back_when_the_issue_is_closed": "passed",
         "test_service.py::test_ambiguous_discord_reply_is_found_by_its_text_not_resent": "passed",
         "test_adapters.py::test_discord_lookup_matches_only_this_bots_reply_with_the_same_text": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "A reply is never mistaken for a new report, on Discord or in Slack threads.",
+      "how": "A \"thanks!\" under Capalis's acknowledgement starts nothing; Slack reports get their replies in the thread.",
+      "tests": {
+        "test_service.py::test_replies_never_start_a_new_report": "passed",
+        "test_service.py::test_slack_intake_replies_in_the_reports_thread": "passed",
+        "test_adapters.py::test_slack_thread_replies_post_find_and_read_back_inside_the_thread": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Schedules fire once per slot and never flood after downtime.",
+      "how": "Each slot is deduplicated by its minute; counting starts at approval; only the latest missed slot runs.",
+      "tests": {
+        "test_cron.py::test_latest_missed_slot_fires_once": "passed",
+        "test_service.py::test_site_watch_fires_on_schedule_and_alerts_once_per_slot": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "The owner is told when something needs a person, once.",
+      "how": "Quarantines, unknown effects, confirmations and failed runs become one alert each, retried until delivered.",
+      "tests": {
+        "test_service.py::test_owner_alerts_are_sent_once_from_now_on": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Upgrades are never silent, and shared Recipes never carry approvals.",
+      "how": "A new version lists what changed before approval; an import is digest-checked, recompiled and unapproved.",
+      "tests": {
+        "test_service.py::test_a_new_version_shows_what_changed_before_approval": "passed",
+        "test_service.py::test_recipe_export_import_carries_no_approval_and_detects_tampering": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Other Hermes tools run only after a passing test and the owner's approval.",
+      "how": "A proposed contract is inert; writes are refused; any change or revocation takes it out of Recipes.",
+      "tests": {
+        "test_service.py::test_another_hermes_tool_runs_only_after_a_passing_test_and_owner_approval": "passed",
+        "test_service.py::test_a_changed_contract_must_be_tested_and_approved_again": "passed",
+        "test_service.py::test_a_failing_contract_test_cannot_be_approved": "passed"
       },
       "holds": true
     },

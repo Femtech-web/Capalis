@@ -81,6 +81,8 @@ class SlackAdapter:
     def _post(self, call: Invocation, token: str) -> InvokeResult:
         body: dict[str, Any] = {"channel": call.inputs["channel"], "text": call.inputs["text"],
                                 "unfurl_links": False, "unfurl_media": False}
+        if call.inputs.get("thread_ts"):
+            body["thread_ts"] = call.inputs["thread_ts"]
         if call.idempotency_key:
             body["metadata"] = {"event_type": EVENT_TYPE, "event_payload": {"key": call.idempotency_key}}
         response, data = self._api("chat.postMessage", token, call.timeout_s, body=body)
@@ -94,10 +96,14 @@ class SlackAdapter:
     def _find(self, call: Invocation, token: str) -> InvokeResult:
         channel, key = call.inputs["channel"], call.inputs["idempotency_key"]
         query: dict[str, Any] = {"channel": channel, "limit": 200, "include_all_metadata": "true"}
+        # Thread replies are not in the channel history; they are read from the thread itself.
+        method = "conversations.history"
+        if call.inputs.get("thread_ts"):
+            method, query["ts"] = "conversations.replies", call.inputs["thread_ts"]
         if isinstance(call.inputs.get("since"), int):
             query["oldest"] = str(max(0, call.inputs["since"] - 300))
         for _ in range(MAX_SCAN_PAGES):
-            response, data = self._api("conversations.history", token, call.timeout_s, query=query)
+            response, data = self._api(method, token, call.timeout_s, query=query)
             problem = self._failure(response, data, write=False)
             if problem is not None:
                 return problem
@@ -113,8 +119,13 @@ class SlackAdapter:
 
     def _get(self, call: Invocation, token: str) -> InvokeResult:
         ts = call.inputs["ts"]
-        query = {"channel": call.inputs["channel"], "latest": ts, "oldest": ts, "inclusive": "true", "limit": 1}
-        response, data = self._api("conversations.history", token, call.timeout_s, query=query)
+        query: dict[str, Any] = {"channel": call.inputs["channel"], "latest": ts, "oldest": ts, "inclusive": "true",
+                                 "limit": 1}
+        method = "conversations.history"
+        if call.inputs.get("thread_ts"):
+            method, query = "conversations.replies", {"channel": call.inputs["channel"], "ts": call.inputs["thread_ts"],
+                                                      "oldest": ts, "inclusive": "true", "limit": 200}
+        response, data = self._api(method, token, call.timeout_s, query=query)
         problem = self._failure(response, data, write=False)
         if problem is not None:
             return problem

@@ -55,6 +55,15 @@ def named(value: str | None, names: Mapping[str, str], kind: str | None = None) 
     return f"{label} ({value})" if label else value
 
 
+def named_text(text: str, names: Mapping[str, str]) -> str:
+    """Put display names next to the ids that appear in a sentence."""
+    for key, label in names.items():
+        value = key.split(":", 1)[1]
+        if value in text and label not in text:
+            text = text.replace(value, f"{value} ({label})", 1)
+    return text
+
+
 def recipe(desc: Mapping[str, Any]) -> str:
     trigger, names = desc["trigger"], desc.get("names", {})
     senders = ", ".join(named(s, names, "discord.user") for s in trigger["senders"])
@@ -77,6 +86,10 @@ def recipe(desc: Mapping[str, Any]) -> str:
               f"{', '.join(named(t, names) for t in desc['targets'])}",
               f"Limits: {budgets['max_writes_per_run']} writes per run, {budgets['max_runs_per_hour']} runs per hour, "
               f"{budgets['max_runs_per_day']} per day"]
+    changes = desc.get("changes_since_previous")
+    if changes is not None:
+        lines.append(f"Changes since v{desc['version'] - 1}:" + ("" if changes else " none"))
+        lines += [f"  - {named_text(change, names)}" for change in changes]
     if desc["state"] == "awaiting_approval":
         lines.append(f"To approve this exact version: /capalis approve {desc['recipe_id']} {desc['short_digest']}")
     return "\n".join(lines)
@@ -135,8 +148,15 @@ def plain(desc: Mapping[str, Any]) -> str:
         elif step["effect"] != "read":
             verb = _WRITE_WORDS.get(step["capability"], f"{step['effect'].replace('_', ' ')} on")
             actions.append(f"{verb} {short(step['target'])}" + (" (if needed)" if step["when"] else ""))
-    return (f"When {who} posts in {short(trigger['source'])}, it will " + ", then ".join(actions)
+    when = (f"On the schedule {trigger.get('schedule')}" if trigger["kind"] == "schedule"
+            else f"When {who} posts in {short(trigger['source'])}")
+    text = (f"{when}, it will " + ", then ".join(actions)
             + ". Every write is read back independently before it counts as done.")
+    changes = desc.get("changes_since_previous")
+    if changes:
+        shown = "; ".join(named_text(c, names) for c in changes[:4]) + ("; ..." if len(changes) > 4 else "")
+        text += f" Changed since v{desc['version'] - 1}: {shown}."
+    return text
 
 
 def setup(checks: Sequence[Mapping[str, Any]]) -> str:

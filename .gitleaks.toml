@@ -2,6 +2,10 @@ title = "capalis"
 
 [extend]
 useDefault = true
+# Discord client, channel and user ids are public identifiers, not secrets. The rule matches any 18-digit
+# number next to the word "discord", which every fixture and Recipe here contains. Discord bot *tokens*
+# are still caught by the default discord-api-token rule.
+disabledRules = ["discord-client-id"]
 
 [allowlist]
 description = "Obviously fake, test-only credential shapes used to prove redaction works"
@@ -9,4 +13,5 @@ paths = [
   '''tests/unit/test_wire_and_redact\.py''',
   '''tests/unit/test_adapters\.py''',
   '''tests/unit/test_directory\.py''',
+  '''tests/integration/test_storage\.py''',
 ]

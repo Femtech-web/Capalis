@@ -284,3 +284,24 @@ def test_discord_get_reads_one_message() -> None:
     result = adapter.invoke(call(adapter.capability_id, {"channel": CHANNEL, "id": "1569700000000000001"}))
     assert result.output == {"id": "1569700000000000001", "channel": CHANNEL, "text": "closed as fixed"}
     assert script.sent[0].url.endswith(f"/channels/{CHANNEL}/messages/1569700000000000001")
+
+
+def test_slack_thread_replies_post_find_and_read_back_inside_the_thread() -> None:
+    thread = "1794300000.000200"
+    adapter, script = slack("message.post", reply(200, {"ok": True, "ts": "1794300001.000001", "channel": "C1"}))
+    adapter.invoke(call(adapter.capability_id, {"channel": "C1", "text": "tracked", "thread_ts": thread}, KEY))
+    assert script.sent[0].body["thread_ts"] == thread
+
+    replies = {"ok": True, "has_more": False, "messages": [
+        {"ts": thread, "text": "report"},
+        {"ts": "1794300001.000001", "text": "tracked",
+         "metadata": {"event_type": "capalis_effect", "event_payload": {"key": KEY}}}]}
+    adapter, script = slack("message.find_by_key", reply(200, replies))
+    found = adapter.invoke(call(adapter.capability_id, {"channel": "C1", "idempotency_key": KEY, "thread_ts": thread}))
+    assert found.output == {"found": True, "resource": {"ts": "1794300001.000001", "channel": "C1"}}
+    assert "conversations.replies" in script.sent[0].url and f"ts={thread}" in script.sent[0].url
+
+    adapter, script = slack("message.get", reply(200, replies))
+    got = adapter.invoke(call(adapter.capability_id, {"channel": "C1", "ts": "1794300001.000001", "thread_ts": thread}))
+    assert got.output == {"text": "tracked", "ts": "1794300001.000001"}
+    assert "conversations.replies" in script.sent[0].url

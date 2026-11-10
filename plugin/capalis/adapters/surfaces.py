@@ -66,16 +66,27 @@ RECIPE_SCHEMA: dict[str, Any] = {
         "success the version awaits the owner's approval, which only the owner can give by typing /capalis "
         "approve. 'show' and 'list' describe Recipes. " + DRAFT_FORMAT),
     "parameters": {"type": "object", "additionalProperties": False, "required": ["action"], "properties": {
-        "action": {"type": "string", "enum": ["template", "compile", "qualify", "show", "list"]},
+        "action": {"type": "string", "enum": ["template", "compile", "qualify", "show", "list", "export", "import"]},
+        "bundle": {**_OBJ, "description": "import: a capalis-recipe/1 export; it is compiled here and still needs "
+                                          "shadow qualification and the owner's approval"},
         "recipe_id": {"type": "string", "description": "3-40 lowercase letters, digits or dashes"},
         "draft": {**_OBJ, "description": "the Recipe draft (compile)"},
         "sample_payload": {**_OBJ, "description": "a realistic trigger payload for the shadow run (qualify)"},
         "repo": {"type": "string",
                  "description": "template: repository name or owner/repo, as the user said it"},
         "slack_channel": {"type": "string", "description": "template: Slack channel name (#engineering) or id"},
-        "discord_channel": {"type": "string", "description": "template: Discord channel name (#bugs) or id"},
+        "template": {"type": "string", "enum": ["bug_report", "site_watch"],
+                     "description": "template: bug_report (default) or site_watch (check a page on a schedule and "
+                                    "tell Slack when it is not up)"},
+        "url": {"type": "string", "description": "site_watch: the https:// page to check"},
+        "every_minutes": {"type": "integer", "description": "site_watch: how often (divides an hour; default 10)"},
+        "intake": {"type": "string", "enum": ["discord", "slack"],
+                   "description": "template: where reports are posted (default discord)"},
+        "discord_channel": {"type": "string",
+                            "description": "template: the channel reports are posted in (#bugs), on the intake "
+                                           "platform"},
         "reporters": {"type": "array", "items": {"type": "string"},
-                      "description": "template: who may report: Discord usernames (@ada) or user ids"},
+                      "description": "template: who may report: usernames on the intake platform (@ada) or ids"},
         "reply_when_closed": {"type": "boolean",
                               "description": "template: wait for the issue to close, then reply to the reporter "
                                              "in Discord (default true)"},
@@ -88,7 +99,7 @@ RUN_SCHEMA: dict[str, Any] = {
                     "state and the independent checks behind it; report outcomes exactly as it states them "
                     "(verified only when it says verified)."),
     "parameters": {"type": "object", "additionalProperties": False, "required": ["action"], "properties": {
-        "action": {"type": "string", "enum": ["start", "evidence", "list"]},
+        "action": {"type": "string", "enum": ["start", "evidence", "export", "list"]},
         "recipe_id": {"type": "string"}, "run_id": {"type": "string"}, "payload": _OBJ,
     }},
 }
@@ -101,6 +112,21 @@ SETUP_SCHEMA: dict[str, Any] = {
     "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
 }
 
+CONTRACT_SCHEMA: dict[str, Any] = {
+    "name": "capalis_contract",
+    "description": (
+        "Let Capalis use another Hermes tool (built-in or from another plugin) inside Recipes, as a read step or "
+        "an independent check. 'propose' records a capability contract for a tool you can see: its Hermes tool "
+        "name, the plugin providing it (omit for built-ins), a summary, a dotted operation name, input_schema, "
+        "output_schema (or output_format text), and sample_inputs for a test call. Only tools that read are "
+        "accepted. A proposal is untrusted: the owner must run /capalis contract test <id> and then "
+        "/capalis contract approve <id> before any Recipe can use it. 'list' shows contracts and their state."),
+    "parameters": {"type": "object", "additionalProperties": False, "required": ["action"], "properties": {
+        "action": {"type": "string", "enum": ["propose", "list"]},
+        "contract": {**_OBJ, "description": "propose: the contract"},
+    }},
+}
+
 PAUSE_SCHEMA: dict[str, Any] = {
     "name": "capalis_pause",
     "description": ("Pause one live Recipe, or every Recipe when recipe_id is omitted. Runs in progress hold before "
@@ -109,7 +135,7 @@ PAUSE_SCHEMA: dict[str, Any] = {
         "recipe_id": {"type": "string"}, "reason": {"type": "string"}}},
 }
 
-TOOLS = (STATUS_SCHEMA, SETUP_SCHEMA, CAPABILITIES_SCHEMA, RECIPE_SCHEMA, RUN_SCHEMA, PAUSE_SCHEMA)
+TOOLS = (STATUS_SCHEMA, SETUP_SCHEMA, CAPABILITIES_SCHEMA, RECIPE_SCHEMA, RUN_SCHEMA, CONTRACT_SCHEMA, PAUSE_SCHEMA)
 
 
 def _json(value: Any) -> str:
@@ -136,11 +162,15 @@ def handlers(service: ServiceFactory) -> dict[str, Callable[..., str]]:
 
         def go() -> Any:
             svc = service()
+            if action == "template" and args.get("template") == "site_watch":
+                return svc.site_watch_template(url=args["url"], slack_channel=args["slack_channel"],
+                                               every_minutes=int(args.get("every_minutes") or 10))
             if action == "template":
                 return svc.bug_report_template(repo=args["repo"], slack_channel=args["slack_channel"],
                                                discord_channel=args["discord_channel"],
                                                reporters=list(args.get("reporters") or []),
-                                               reply_when_closed=bool(args.get("reply_when_closed", True)))
+                                               reply_when_closed=bool(args.get("reply_when_closed", True)),
+                                               intake=str(args.get("intake") or "discord"))
             if action == "compile":
                 return svc.compile(args["recipe_id"], args["draft"], owner=OWNER)
             if action == "qualify":
@@ -152,6 +182,10 @@ def handlers(service: ServiceFactory) -> dict[str, Callable[..., str]]:
                 return svc.describe(latest[0])
             if action == "list":
                 return svc.recipes()
+            if action == "export":
+                return svc.export_recipe(args["recipe_id"])
+            if action == "import":
+                return svc.import_recipe(args["bundle"], args["recipe_id"], owner=OWNER)
             raise ServiceError(f"unknown action {action!r}")
 
         return _guard(go)
@@ -165,6 +199,8 @@ def handlers(service: ServiceFactory) -> dict[str, Callable[..., str]]:
                 return svc.run_manual(args["recipe_id"], args.get("payload") or {}, sender=OWNER)
             if action == "evidence":
                 return svc.evidence(args["run_id"])
+            if action == "export":
+                return svc.export_evidence(args["run_id"])
             if action == "list":
                 return [svc.run_line(r) for r in svc.store.runs(args.get("recipe_id"), limit=20)]
             raise ServiceError(f"unknown action {action!r}")
@@ -178,8 +214,13 @@ def handlers(service: ServiceFactory) -> dict[str, Callable[..., str]]:
     def setup(args: dict[str, Any], **_: Any) -> str:
         return _guard(lambda: service().setup_report())
 
+    def contract(args: dict[str, Any], **_: Any) -> str:
+        if args.get("action") == "propose":
+            return _guard(lambda: service().propose_contract(args.get("contract") or {}))
+        return _guard(lambda: service().contracts())
+
     return {"capalis_status": status, "capalis_setup": setup, "capalis_capabilities": capabilities,
-            "capalis_recipe": recipe,
+            "capalis_contract": contract, "capalis_recipe": recipe,
             "capalis_run": run, "capalis_pause": pause}
 
 
@@ -193,6 +234,11 @@ COMMAND_HELP = """/capalis                         status
 /capalis pause [recipe]             pause one Recipe or all
 /capalis resume [recipe]            resume after a pause
 /capalis revoke <recipe>            withdraw approval
+/capalis export <run>               write a reviewer-friendly evidence bundle (Markdown + JSON)
+/capalis contracts                  other Hermes tools proposed for use in Recipes
+/capalis contract test|approve|revoke <id>   test a proposed tool, then approve or revoke it
+/capalis cancel <run>               stop a run (an effect already sent stays recorded)
+/capalis prefer recommend|compare|ask   how options are presented to you
 /capalis confirm <run> <step>       confirm a step that needs per-run confirmation
 /capalis resolve <run> <step> applied|not-applied   answer for an effect Capalis could not check
 Run ids can be shortened to their first 8 characters. Add --json for the raw record."""
@@ -247,6 +293,22 @@ def command(service: ServiceFactory, ask: Ask | None = None) -> Callable[..., st
                 return svc.resume(rest[0] if rest else None, actor)
             if verb == "revoke" and len(rest) == 1:
                 return svc.revoke(rest[0], actor)
+            if verb == "contracts":
+                return _format(svc.contracts())
+            if verb == "contract" and len(rest) == 2 and rest[0] == "test":
+                return _format(svc.test_contract(rest[1], actor))
+            if verb == "contract" and len(rest) == 2 and rest[0] == "approve":
+                return svc.approve_contract(rest[1], actor)
+            if verb == "contract" and len(rest) == 2 and rest[0] == "revoke":
+                return svc.revoke_contract(rest[1], actor)
+            if verb == "export" and len(rest) == 1:
+                bundle = svc.export_evidence(rest[0])
+                return "Evidence written to:\n" + "\n".join(f"  {f}" for f in bundle.get("files", [])) \
+                    if bundle.get("files") else _format(bundle)
+            if verb == "cancel" and len(rest) == 1:
+                return view(svc.cancel(rest[0], actor), render.evidence)
+            if verb == "prefer" and len(rest) == 1 and rest[0] in ("recommend", "compare", "ask"):
+                return svc.prefer(actor, rest[0])
             if verb == "confirm" and len(rest) == 2:
                 return view(svc.confirm(rest[0], rest[1], actor), render.evidence)
             if verb == "resolve" and len(rest) == 3 and rest[2] in ("applied", "not-applied"):

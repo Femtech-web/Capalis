@@ -1,29 +1,36 @@
 # Capalis
 
-**Agents that prove they're done.** Capability intelligence and Verified Recipes for Hermes Agent.
+**Your AI agent says "done". Capalis makes it prove it.** Capability intelligence and Verified Recipes for Hermes Agent.
 
-Describe a workflow in chat. Capalis compiles it into a **Recipe**, a fixed and versioned plan that can only write where you approve. It shadow-runs the Recipe (real reads, nothing sent) and waits for you to press **Approve**. From then on, every write is read back from the service by a separate check before it counts. It never creates a duplicate, never blindly retries, and stops itself if something it depends on changes.
+Describe a job in plain words: "when @ada posts a bug in #bugs, open an issue in my-app, tell #engineering, and let her know when it's fixed." Capalis turns it into a **Recipe**, a fixed, versioned plan that can only write where you approve. It practices once in shadow mode (real reads, nothing sent), then waits for you to press **Approve**. From then on, every write is read back from GitHub, Slack or Discord before it counts. Nothing is done twice, and if something it depends on changes, it stops and alerts you.
 
-> Example: when @ada posts a bug in Discord #bugs, open an issue in my-app, tell #engineering in Slack, thank her, and tell her again when the issue is closed.
+Ready-made Recipes:
+- bug reports from Discord or Slack, with replies to the reporter;
+- a site watch that checks a page on a schedule and posts to Slack when it's down.
+
+Anything else you can describe, built from the same pieces, including other Hermes tools you approve.
 
 ## Setup
 
 1. `hermes plugins enable capalis`
-2. Add the credentials you need in **Settings → Plugins → Capalis**, or with `hermes config set`: `CAPALIS_GITHUB_TOKEN`, `CAPALIS_SLACK_BOT_TOKEN`, `CAPALIS_DISCORD_BOT_TOKEN`.
+2. Add the credentials you need in **Settings → Plugins → Capalis**, or with `hermes config set`: `CAPALIS_GITHUB_TOKEN`, `CAPALIS_SLACK_BOT_TOKEN`, `CAPALIS_DISCORD_BOT_TOKEN`. Optionally, set an **Alerts channel**.
 3. Type `/capalis setup`. It says what is ready and gives the exact fix for anything that isn't.
-4. Ask Hermes for the Recipe using names (`#bugs`, `#engineering`, `my-app`, `@ada`), then approve with `/capalis approve <recipe>`.
+4. Describe the Recipe using names, then approve it with `/capalis approve <recipe>`.
 
-Full guide: [docs/USER_GUIDE.md](../docs/USER_GUIDE.md). For teammates who only report bugs: [docs/REPORTERS.md](../docs/REPORTERS.md).
+Guides: [owners](../docs/USER_GUIDE.md) · [reporters](../docs/REPORTERS.md).
 
 ## Commands
 
-`/capalis` status · `setup` · `show <recipe>` · `approve <recipe>` (button) · `runs` · `evidence <run>` · `pause` / `resume` · `revoke <recipe>` · `confirm` · `resolve`. The model can pause, but it can never approve, resume, revoke, confirm or resolve.
+`/capalis` status · `setup` · `show` · `approve` (button) · `runs` · `evidence` · `export` · `pause` / `resume` · `revoke` · `cancel` · `contract test|approve|revoke` · `prefer`.
+
+The model can propose, practice and pause, but it can never approve, resume, revoke, confirm or resolve.
 
 ## Disclosure
 
 - **Network:** `api.github.com`, `slack.com` and `discord.com` with your tokens (plus a Slack webhook if you set one), and credential-free HTTPS `GET`s to origins an approved Recipe names. No telemetry.
-- **Storage:** one SQLite file in `plugin-data/capalis/` with Recipes, approvals, runs and redacted payloads. Credentials are read only through Hermes.
-- **Messages:** Capalis consumes the messages in channels a Recipe listens to, so the agent doesn't reply there.
-- **Background work:** a daemon thread in the gateway advances parked runs every 30 s. No shell commands, subprocesses or self-updating.
+- **Other Hermes tools:** only those whose read-only contract you tested and approved, called through `ctx.dispatch_tool`.
+- **Storage:** one SQLite file in `plugin-data/capalis/` with Recipes, approvals, runs and redacted payloads, plus evidence exports in `plugin-data/capalis/exports/`. Credentials are read only through Hermes.
+- **Messages:** Capalis consumes the messages in channels a Recipe listens to, and posts to your Alerts channel if you set one.
+- **Background work:** a daemon thread in the gateway advances runs, fires schedules, checks for drift and sends alerts every 30 s. No shell commands, subprocesses or self-updating.
 
-MIT licensed. Security model, tests and the claims judges can check: see the repository root.
+MIT licensed. Architecture, security model, tests and the claims judges can check: see the repository root.

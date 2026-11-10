@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import json
 import queue
 import re
 import threading
@@ -21,10 +22,11 @@ from typing import Any
 from .core.compiler import compile_recipe
 from .core.drift import detect_drift
 from .core.expressions import condition_to_wire
-from .core.lifecycle import IllegalTransition, RecipeState, RunState
-from .core.matching import Requirement, match_requirement
-from .core.model import Effect, EvidenceLevel, RecipeSpec, TriggerKind, grant_for
+from .core.lifecycle import IllegalTransition, RecipeState, RunState, StepState
+from .core.matching import ObservedStats, Requirement, match_requirement
+from .core.model import Effect, EvidenceLevel, RecipeSpec, Target, TriggerKind, grant_for
 from .core.policy import Mode
+from .runtime.ports import Invocation, InvokeResult, Outcome
 from .runtime.runner import Runner, Submission
 from .storage.db import Store, StoreError
 
@@ -51,7 +53,14 @@ class Actor:
 class Capalis:
     def __init__(self, store: Store, adapters: Mapping[str, Any], *, workspace: str = "default",
                  approvers: Callable[[], Sequence[str]] = lambda: (), runner: Runner | None = None,
-                 directory: Any = None) -> None:
+                 directory: Any = None, alert_channel: Callable[[], str | None] = lambda: None,
+                 export_dir: Callable[[], Any] | None = None,
+                 dispatch: Callable[[str, dict[str, Any]], Any] | None = None,
+                 has_plugin: Callable[[str], bool] | None = None) -> None:
+        self.alert_channel = alert_channel
+        self.export_dir = export_dir
+        self.dispatch = dispatch
+        self.has_plugin = has_plugin
         self.store = store
         self.adapters = adapters
         self.directory = directory
@@ -62,6 +71,7 @@ class Capalis:
         self._worker: threading.Thread | None = None
         self._worker_lock = threading.Lock()
         self._stopping = threading.Event()
+        self._load_contracts()
 
     def descriptors(self) -> dict[str, Any]:
         return {cid: adapter.descriptor for cid, adapter in self.adapters.items()}
@@ -76,6 +86,28 @@ class Capalis:
                  "input_schema": cap.input_schema, "output_schema": cap.output_schema, "setup": cap.setup_hint}
                 for cap in self.descriptors().values()]
 
+    def observed(self) -> dict[str, ObservedStats]:
+        """What each capability actually did in this install's live runs (FR-MEM-03): counts, never rates."""
+        counts: dict[str, dict[str, int]] = {}
+        recipes: dict[str, RecipeSpec] = {}
+        for run in self.store.runs(limit=500):
+            if run.mode is not Mode.LIVE:
+                continue
+            recipe = recipes.get(run.recipe_digest) or recipes.setdefault(run.recipe_digest,
+                                                                          self.store.recipe(run.recipe_digest))
+            for attempt in self.store.latest_attempts(run.run_id).values():
+                step = recipe.step(attempt.step_id)
+                if step is None or not step.is_side_effect:
+                    continue
+                bucket = counts.setdefault(step.capability_id, {"verified": 0, "failed": 0, "unverified": 0})
+                if attempt.state is StepState.OBSERVED_VERIFIED:
+                    bucket["verified"] += 1
+                elif attempt.state is StepState.FAILED:
+                    bucket["failed"] += 1
+                elif attempt.state is StepState.UNVERIFIED:
+                    bucket["unverified"] += 1
+        return {cid: ObservedStats(environment="this install's live runs", **c) for cid, c in counts.items()}
+
     def compare(self, needs: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         registry = self.descriptors()
         results = []
@@ -88,7 +120,7 @@ class Capalis:
                     else EvidenceLevel(raw.get("min_evidence", "V1")))
             except (KeyError, ValueError) as exc:
                 raise ServiceError(f"each need takes need_id, operation, max_effect and min_evidence: {exc}") from exc
-            match = match_requirement(requirement, registry)
+            match = match_requirement(requirement, registry, self.observed())
             results.append({
                 "need_id": requirement.need_id, "recommended": match.recommended, "rationale": match.rationale,
                 "candidates": [{"id": a.capability_id, "can_run": a.executable, "excluded_because": list(a.exclusions),
@@ -99,7 +131,7 @@ class Capalis:
         return results
 
     def bug_report_template(self, *, repo: str, slack_channel: str, discord_channel: str, reporters: Sequence[str],
-                            reply_when_closed: bool = True) -> dict[str, Any]:
+                            reply_when_closed: bool = True, intake: str = "discord") -> dict[str, Any]:
         """The bug-report draft, with names people use ("#bugs", "capalis-sandbox", "@ada") resolved to ids."""
         from .templates import DRAFT_FORMAT, bug_report
 
@@ -118,16 +150,46 @@ class Capalis:
             return str(hit.value)
 
         d = self.directory
+        if intake not in ("discord", "slack"):
+            raise ServiceError("intake is discord or slack")
         repo_id = resolve("github.repo", repo, lambda: d.github_repo(repo))
         slack_id = resolve("slack.channel", slack_channel, lambda: d.slack_channel(slack_channel))
-        discord_id = resolve("discord.channel", discord_channel, lambda: d.discord_channel(discord_channel))
-        people = [resolve("discord.user", who, functools.partial(d.discord_user, who, discord_id)) if d else who
-                  for who in reporters]
+        if intake == "discord":
+            report_id = resolve("discord.channel", discord_channel, lambda: d.discord_channel(discord_channel))
+            people = [resolve("discord.user", who, functools.partial(d.discord_user, who, report_id)) if d else who
+                      for who in reporters]
+        else:
+            report_id = resolve("slack.channel", discord_channel, lambda: d.slack_channel(discord_channel))
+            people = [resolve("slack.user", who, functools.partial(d.slack_user, who)) if d else who
+                      for who in reporters]
         self.store.set_names(labels)
-        draft = bug_report(repo=repo_id, slack_channel=slack_id, discord_channel=discord_id, reporters=people,
-                           reply_when_closed=reply_when_closed)
+        draft = bug_report(repo=repo_id, slack_channel=slack_id, discord_channel=report_id, reporters=people,
+                           reply_when_closed=reply_when_closed, intake=intake)
         return {"draft": draft, "resolved": resolved, "format": DRAFT_FORMAT,
                 "notes": [f"{r['name']}: {r['note']}" for r in resolved if r["note"]]}
+
+    def site_watch_template(self, *, url: str, slack_channel: str, every_minutes: int = 10) -> dict[str, Any]:
+        from urllib.parse import urlsplit
+
+        from .templates import DRAFT_FORMAT, site_watch
+
+        parts = urlsplit(url.strip())
+        if parts.scheme != "https" or not parts.netloc:
+            raise ServiceError("give the full https:// address to watch")
+        origin, path = f"https://{parts.netloc}", parts.path or "/"
+        channel = slack_channel
+        resolved = []
+        if self.directory is not None:
+            try:
+                hit = self.directory.slack_channel(slack_channel)
+            except ValueError as exc:
+                raise ServiceError(str(exc)) from exc
+            channel = hit.value
+            self.store.set_names({f"slack.channel:{hit.value}": hit.label})
+            resolved.append({"asked": slack_channel, "kind": "slack.channel", "id": hit.value, "name": hit.label,
+                             "note": hit.note})
+        return {"draft": site_watch(origin=origin, path=path, slack_channel=channel, every_minutes=every_minutes),
+                "resolved": resolved, "format": DRAFT_FORMAT}
 
     def compile(self, recipe_id: str, draft: Mapping[str, Any], *, owner: str) -> dict[str, Any]:
         if not RECIPE_ID.fullmatch(recipe_id):
@@ -173,7 +235,9 @@ class Capalis:
                     self.store.transition(recipe.digest, target, reason="shadow run passed")
         report["qualified"] = passed
         report["state"] = self.store.recipe_state(recipe.digest).value
-        report["next"] = (f"Ask the owner to review and type /capalis approve {recipe_id} {recipe.digest[7:19]}"
+        report["next"] = (f"Ask the owner to type /capalis approve {recipe_id} to review a plain summary and approve "
+                          f"with a button (or /capalis approve {recipe_id} {recipe.digest[7:19]} where buttons are "
+                          "unavailable)"
                           if passed else "Fix the problems above and compile a new version.")
         return report
 
@@ -256,6 +320,19 @@ class Capalis:
         self.store.transition(recipe.digest, RecipeState.AWAITING_APPROVAL, reason=f"revoked by {actor.id}")
         return f"Approval for {recipe_id} v{recipe.version} revoked."
 
+    def cancel(self, run_id: str, actor: Actor) -> dict[str, Any]:
+        self.authorize_actor(actor)
+        run_id = self.find_run(run_id)
+        self.runner.cancel(run_id, actor=actor.id)
+        return self.evidence(run_id)
+
+    def prefer(self, actor: Actor, presentation: str) -> str:
+        """FR-MAT-05: how comparisons are presented; it never changes what needs approval."""
+        self.store.set_presentation(actor.id, presentation)
+        words = {"recommend": "lead with the recommended option", "compare": "show the full comparison first",
+                 "ask": "ask each time"}
+        return f"Capalis will {words[presentation]} for {actor.id}. Approval is still required either way."
+
     def confirm(self, run_id: str, step_id: str, actor: Actor) -> dict[str, Any]:
         self.authorize_actor(actor)
         run_id = self.find_run(run_id)
@@ -278,8 +355,9 @@ class Capalis:
                   if state not in (RecipeState.RETIRED, RecipeState.QUARANTINED)]
         targets = {str(t) for recipe in active for t in recipe.targets}
         discord = {r.trigger.source.rsplit(":", 1)[1] for r in active if r.trigger.source.startswith("discord:")}
+        slack = {r.trigger.source.rsplit(":", 1)[1] for r in active if r.trigger.source.startswith("slack:")}
         return [{"area": c.area, "ok": c.ok, "detail": c.detail, "fix": c.fix}
-                for c in readiness(self.directory, targets, discord)]
+                for c in readiness(self.directory, targets, discord, slack)]
 
     def drift_sweep(self) -> list[dict[str, str]]:
         """Quarantine approved versions whose pinned capabilities changed, before any trigger arrives."""
@@ -297,6 +375,99 @@ class Capalis:
                                         "reason": report.summary()})
         return quarantined
 
+    # -- Schedules ----------------------------------------------------------------------------------
+
+    def fire_schedules(self, now: int | None = None) -> list[str]:
+        """Start runs for live schedule Recipes whose time has come (FR-EXE-06). The dedupe value is the slot,
+        so a slot fires once even if several workers or restarts look at it."""
+        from .core.cron import Cron, iso_minute
+
+        at = self.store.clock() if now is None else now
+        fired: list[str] = []
+        for recipe_id in sorted({row[0] for row in self.store.recipes()}):
+            recipe = self.store.version_in_state(recipe_id, RecipeState.LIVE)
+            if recipe is None or recipe.trigger.kind is not TriggerKind.SCHEDULE or not recipe.trigger.schedule:
+                continue
+            key = f"schedule:{recipe.digest}"
+            last = self.store.control(key)
+            self.store.set_control(key, str(at))
+            if last is None:
+                continue  # start counting from approval, never backfill
+            slot = Cron.parse(recipe.trigger.schedule).latest_between(int(last), at)
+            if slot is None:
+                continue
+            sub = self.runner.submit(recipe, source=recipe.trigger.source, sender=sorted(recipe.trigger.senders)[0],
+                                     payload={}, dedupe_value=f"schedule-{iso_minute(slot)}", advance=False)
+            if sub.run_id is not None and sub.code == "queued":
+                self._enqueue(sub.run_id)
+                fired.append(sub.run_id)
+        return fired
+
+    # -- Owner alerts -------------------------------------------------------------------------------
+
+    def send_alerts(self, limit: int = 10) -> int:
+        """Tell the owner, in the channel they chose, about anything that now needs a person.
+
+        Driven by the event log, so an alert survives restarts and is sent once: the cursor only moves past
+        an event after its alert was delivered (or when the event needs none).
+        """
+        spec = (self.alert_channel() or "").strip()
+        if not spec or self.directory is None:
+            return 0
+        cursor = self.store.control("alerts_seq")
+        if cursor is None:
+            self.store.set_control("alerts_seq", str(self.store.last_event_seq()))
+            return 0
+        platform, _, name = spec.partition(":")
+        cid = {"slack": "capalis:slack.message.post", "discord": "capalis:discord.message.post"}.get(platform)
+        if cid is None or cid not in self.adapters:
+            return 0
+        try:
+            channel = (self.directory.slack_channel(name) if platform == "slack"
+                       else self.directory.discord_channel(name)).value
+        except ValueError:
+            return 0
+        sent = 0
+        for event in self.store.events_after(int(cursor)):
+            text = self._alert_text(event)
+            if text is not None:
+                if sent >= limit:
+                    break
+                target = Target(f"{platform}.channel", channel)
+                result = self.adapters[cid].invoke(Invocation(cid, target, {"channel": channel, "text": text},
+                                                              f"cap-alert-{event.seq}", 20))
+                if result.outcome is not Outcome.OK:
+                    self.store.append_event("alert.failed", {"seq": event.seq, "error": result.error or ""})
+                    break
+                self.store.append_event("alert.sent", {"seq": event.seq, "channel": f"{platform}:{channel}"})
+                sent += 1
+            self.store.set_control("alerts_seq", str(event.seq))
+        return sent
+
+    def _alert_text(self, event: Any) -> str | None:
+        payload = event.payload
+        if event.kind == "recipe.state" and payload.get("to") == RecipeState.QUARANTINED.value:
+            recipe = self.store.recipe(payload["digest"])
+            return (f"Capalis: {recipe.recipe_id} v{recipe.version} is quarantined because something it depends "
+                    f"on changed ({payload.get('reason', '')}). Nothing more will be written. Ask Hermes to rebuild "
+                    f"it, then approve the new version.")
+        if event.kind != "run.state" or event.run_id is None:
+            return None
+        run = self.store.run(event.run_id)
+        short = run.run_id[:8]
+        if run.mode is not Mode.LIVE:
+            return None
+        target, detail = payload.get("to"), str(payload.get("detail") or "")
+        if target == RunState.NEEDS_RECONCILIATION.value:
+            return (f"Capalis: in run {short} ({run.recipe_id}) a write may or may not have happened and cannot be "
+                    f"checked automatically: {detail}. Reply in Hermes with /capalis resolve {short} <step> "
+                    "applied or not-applied.")
+        if target == RunState.WAITING.value and "confirmation" in detail:
+            return f"Capalis: run {short} ({run.recipe_id}) is waiting for you. /capalis confirm {short} <step>"
+        if target == RunState.FAILED.value:
+            return f"Capalis: run {short} ({run.recipe_id}) did not complete: {detail}. /capalis evidence {short}"
+        return None
+
     # -- Status and evidence ------------------------------------------------------------------------
 
     def describe(self, recipe: RecipeSpec) -> dict[str, Any]:
@@ -313,13 +484,23 @@ class Capalis:
                               f"{_condition_text(condition_to_wire(step.wait.until))}, checking every "
                               f"{step.wait.poll_interval_s}s for up to {step.wait.deadline_s // 86400 or 1} day(s)")})
         names = self.store.names()
+        changes: list[str] | None = None
+        if recipe.previous_digest:
+            from .core.diff import diff_recipes
+
+            try:
+                changes = diff_recipes(self.store.recipe(recipe.previous_digest), recipe)
+            except StoreError:
+                changes = None
         return {"recipe_id": recipe.recipe_id, "version": recipe.version, "digest": recipe.digest,
+                "changes_since_previous": changes,
                 "names": {key: label for key, label in names.items()
                           if key in {str(t) for t in recipe.targets}
                           or key.split(":", 1)[1] in {*recipe.trigger.senders, recipe.trigger.source.split(":")[-1]}},
                 "short_digest": recipe.digest[7:19], "state": self.store.recipe_state(recipe.digest).value,
                 "intent": recipe.intent, "trigger": {"kind": recipe.trigger.kind.value, "source": recipe.trigger.source,
-                                                     "senders": sorted(recipe.trigger.senders)},
+                                                     "senders": sorted(recipe.trigger.senders),
+                                                     "schedule": recipe.trigger.schedule},
                 "effects": sorted(e.value for e in recipe.effects), "targets": sorted(str(t) for t in recipe.targets),
                 "steps": steps,
                 "budgets": {"max_writes_per_run": recipe.budgets.max_writes_per_run,
@@ -334,6 +515,8 @@ class Capalis:
         return list(seen.values())
 
     def status(self) -> dict[str, Any]:
+        # Sweep first so status never shows a Recipe as live after its dependencies changed.
+        self.drift_sweep()
         unfinished = self.store.unfinished_intents()
         quarantined = [{"recipe_id": rid, "version": version, "reason": self._state_reason(digest)}
                        for rid, version, digest, state in self.store.recipes() if state is RecipeState.QUARANTINED]
@@ -366,6 +549,160 @@ class Capalis:
         intact, broken_at = self.store.verify_chain()
         return {**self.run_line(run), "steps": steps, "independent_checks": observations,
                 "events": len(self.store.events(run_id)), "event_log_intact": intact, "event_log_broken_at": broken_at}
+
+    # -- Contracts for other Hermes tools -----------------------------------------------------------
+
+    def propose_contract(self, raw: Mapping[str, Any]) -> dict[str, Any]:
+        """Untrusted until tested and approved by the owner; proposing never makes a tool runnable."""
+        from .core.contracts import parse_contract
+
+        spec, problems = parse_contract(raw)
+        if spec is None:
+            return {"ok": False, "problems": problems}
+        self.store.save_contract(spec.capability_id, spec.to_wire(), spec.digest)
+        return {"ok": True, "capability": spec.capability_id, "state": self._contract(spec.capability_id)["state"],
+                "next": f"Ask the owner to run /capalis contract test {spec.capability_id}, look at the sample "
+                        f"output, then /capalis contract approve {spec.capability_id}."}
+
+    def test_contract(self, capability_id: str, actor: Actor) -> dict[str, Any]:
+        from .adapters.hermes_tools import parse_reply
+        from .core import schema as jsonschema
+        from .core.contracts import parse_contract
+
+        self.authorize_actor(actor)
+        row = self._contract(capability_id)
+        spec, _ = parse_contract(row["spec"])
+        if spec is None or self.dispatch is None:
+            raise ServiceError("contract tests need the Hermes runtime")
+        if spec.plugin and self.has_plugin is not None and not self.has_plugin(spec.plugin):
+            raise ServiceError(f"the plugin {spec.plugin} is not installed and enabled")
+        try:
+            result = parse_reply(spec, self.dispatch(spec.tool, dict(spec.sample_inputs)))
+        except Exception as exc:
+            result = InvokeResult(Outcome.RETRYABLE, error=f"{type(exc).__name__}: {exc}")
+        problems = [result.error or "failed"] if result.outcome is not Outcome.OK else \
+            jsonschema.validate(dict(result.output or {}), spec.output_schema)
+        sample = json.dumps(result.output or {}, default=str)[:800]
+        test = {"passed": not problems, "problems": problems[:5], "sample_output": sample, "at": self.store.clock()}
+        self.store.set_contract_state(capability_id, "tested" if not problems else "proposed", actor=actor.id,
+                                      test=test)
+        return {"capability": capability_id, **test}
+
+    def approve_contract(self, capability_id: str, actor: Actor) -> str:
+        """The owner attests the tool only reads, having seen its schema and a passing test."""
+        self.authorize_actor(actor)
+        row = self._contract(capability_id)
+        if row["state"] != "tested" or not (row["test"] or {}).get("passed"):
+            raise ServiceError(f"run /capalis contract test {capability_id} first; only a passing test can be approved")
+        self.store.set_contract_state(capability_id, "approved", actor=actor.id)
+        self._load_contracts()
+        return (f"{capability_id} can now be used in Recipes as a read step or an independent check. Revoke it with "
+                f"/capalis contract revoke {capability_id}; Recipes that use it are then quarantined.")
+
+    def revoke_contract(self, capability_id: str, actor: Actor) -> str:
+        self.authorize_actor(actor)
+        self._contract(capability_id)
+        self.store.set_contract_state(capability_id, "revoked", actor=actor.id)
+        self._load_contracts()
+        self.drift_sweep()
+        return f"{capability_id} is revoked; Recipes that use it are quarantined."
+
+    def contracts(self) -> list[dict[str, Any]]:
+        return [{"capability": c["capability_id"], "tool": c["spec"]["tool"], "plugin": c["spec"]["plugin"],
+                 "summary": c["spec"]["summary"], "state": c["state"], "test": c["test"]}
+                for c in self.store.contracts()]
+
+    def _contract(self, capability_id: str) -> dict[str, Any]:
+        for row in self.store.contracts():
+            if row["capability_id"] == capability_id:
+                return row
+        raise ServiceError(f"no contract for {capability_id}")
+
+    def _load_contracts(self) -> None:
+        if self.dispatch is None or not isinstance(self.adapters, dict):
+            return
+        from .adapters.hermes_tools import HermesToolAdapter
+        from .core.contracts import parse_contract
+
+        for row in self.store.contracts():
+            cid = row["capability_id"]
+            spec, _ = parse_contract(row["spec"])
+            if row["state"] == "approved" and spec is not None:
+                probe = self.has_plugin
+                available: Callable[[], bool] = (functools.partial(probe, spec.plugin) if spec.plugin and probe
+                                                 else (lambda: True))
+                self.adapters[cid] = HermesToolAdapter(spec, self.dispatch, available)
+            elif cid in self.adapters and cid.startswith("hermes:"):
+                del self.adapters[cid]
+
+    # -- Export and import --------------------------------------------------------------------------
+
+    RECIPE_FORMAT = "capalis-recipe/1"
+
+    def export_recipe(self, recipe_id: str) -> dict[str, Any]:
+        """A shareable Recipe (FR-MEM-04): the plan only. No credentials, approvals, payloads or run history."""
+        from .core.wire import wire_to_draft
+
+        recipe, _ = self._latest(recipe_id)
+        wire = recipe.to_wire()
+        return {"format": self.RECIPE_FORMAT, "recipe_id": recipe.recipe_id, "version": recipe.version,
+                "digest": recipe.digest, "intent": recipe.intent, "recipe": wire, "draft": wire_to_draft(wire),
+                "names": self.describe(recipe)["names"],
+                "note": "Contains no credentials, approvals, payloads or run history. Importing compiles it against "
+                        "the importer's own capabilities; it must be shadow-qualified and approved there before "
+                        "it can run."}
+
+    def import_recipe(self, bundle: Mapping[str, Any], recipe_id: str, *, owner: str) -> dict[str, Any]:
+        from .core.wire import WireError, recipe_from_wire, wire_to_draft
+
+        if bundle.get("format") != self.RECIPE_FORMAT:
+            raise ServiceError(f"not a {self.RECIPE_FORMAT} export")
+        try:
+            # The digest proves the plan is exactly what was exported; it is recompiled locally from there.
+            original = recipe_from_wire(bundle["recipe"], expected_digest=str(bundle.get("digest")))
+        except (WireError, KeyError, TypeError) as exc:
+            raise ServiceError(f"the export is damaged or was edited: {exc}") from exc
+        report = self.compile(recipe_id, wire_to_draft(original.to_wire()), owner=owner)
+        report["imported_from"] = {"recipe_id": original.recipe_id, "version": original.version,
+                                   "digest": original.digest}
+        return report
+
+    def export_evidence(self, run_id: str) -> dict[str, Any]:
+        """A reviewer-friendly evidence bundle for one run (FR-VER-07), written beside the plugin data if possible."""
+        import json as _json
+
+        evidence = self.evidence(run_id)
+        run = self.store.run(evidence["run_id"])
+        recipe = self.store.recipe(run.recipe_digest)
+        grant = self.store.active_grant(recipe.digest)
+        bundle = {
+            "format": "capalis-evidence/1", "generated_at": self.store.clock(), "run": evidence,
+            "recipe": {"recipe_id": recipe.recipe_id, "version": recipe.version, "digest": recipe.digest,
+                       "intent": recipe.intent, "definition": recipe.to_wire()},
+            "approval": None if grant is None else {"actor": grant.actor, "issued_at": grant.issued_at,
+                                                     "expires_at": grant.expires_at,
+                                                     "effects": sorted(e.value for e in grant.effects),
+                                                     "targets": sorted(str(t) for t in grant.targets)},
+            "events": [{"seq": e.seq, "at": e.at, "kind": e.kind, "payload": e.payload, "hash": e.hash}
+                       for e in self.store.events(evidence["run_id"])],
+            "limits": ["Checks are V1 (an independent read from the same service) unless marked V2.",
+                       "The event log's hash chain detects edits; it cannot stop someone who rewrites the whole "
+                       "database.", "Payloads and outputs were redacted before they were stored."],
+        }
+        if self.export_dir is not None:
+            from pathlib import Path
+
+            folder = Path(self.export_dir())
+            folder.mkdir(parents=True, exist_ok=True)
+            stem = folder / f"evidence-{evidence['run_id'][:8]}"
+            stem.with_suffix(".json").write_text(_json.dumps(bundle, indent=2, default=str) + "\n")
+            from .adapters.render import evidence as render_evidence
+
+            stem.with_suffix(".md").write_text(f"# Capalis evidence: run {evidence['run_id'][:8]}\n\n```text\n"
+                                               f"{render_evidence(evidence)}\n```\n\nRecipe {recipe.recipe_id} "
+                                               f"v{recipe.version} ({recipe.digest}).\n")
+            bundle["files"] = [str(stem.with_suffix(".md")), str(stem.with_suffix(".json"))]
+        return bundle
 
     # -- Gateway intake and background work ---------------------------------------------------------
 
@@ -420,7 +757,11 @@ class Capalis:
                 with contextlib.suppress(Exception):
                     self.drift_sweep()
                 with contextlib.suppress(Exception):
+                    self.fire_schedules()
+                with contextlib.suppress(Exception):
                     self.runner.tick()
+                with contextlib.suppress(Exception):
+                    self.send_alerts()
                 next_tick = time.monotonic() + interval_s
 
     # -- Helpers ------------------------------------------------------------------------------------

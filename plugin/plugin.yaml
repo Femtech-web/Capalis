@@ -15,6 +15,7 @@ provides_tools:
   - capalis_capabilities
   - capalis_recipe
   - capalis_run
+  - capalis_contract
   - capalis_pause
 provides_hooks:
   - pre_gateway_dispatch
@@ -24,6 +25,11 @@ config_schema:
     default: []
     label: "Approvers"
     description: "Chat users who may approve, resume or revoke Recipes, as platform:user_id (e.g. telegram:12345). Local CLI, TUI and Desktop sessions can always approve."
+  alert_channel:
+    type: str
+    default: ""
+    label: "Alerts channel"
+    description: "Where Capalis tells you when something needs a person (a Recipe quarantined, a write it could not check, a step waiting for confirmation, a failed run), as slack:#channel or discord:#channel. Empty: no alerts."
   github_token:
     type: secret
     env: CAPALIS_GITHUB_TOKEN

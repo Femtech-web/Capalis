@@ -11,7 +11,7 @@ Capalis automates writes to other people's systems, so its first job is to make 
 | **Reporter** (a listed sender in the trigger channel) | Start a run of an approved Recipe | Change what the run does or where it writes |
 | **Everyone else in the channel** | Nothing (messages are refused and logged) | Anything |
 | **Providers** (GitHub, Slack, Discord) | Report what they stored | Have their success reply count as verification |
-| **Other plugins and tools** | Appear in comparisons | Run in a Recipe before a contract test characterizes them |
+| **Other plugins and tools** | Run as read steps or checks after the owner tests and approves their contract | Run before that, or change anything |
 
 ## Invariants
 
@@ -30,7 +30,7 @@ These promises cover **Capalis-managed steps**, not arbitrary Hermes tool calls.
 | I-09 | Trigger origin, sender, payload shape and rate are checked before a run exists | Ingress guard, plus rate caps re-checked inside the write transaction | `test_ingress_rejects_wrong_sender_source_and_payload`, `test_hourly_rate_limit` |
 | I-10 | Every run leaves a durable, tamper-evident record and survives restarts | Transactions, leases, hash chain | `test_event_chain_detects_edits`, `test_durable_wait_survives_restart_and_completes` |
 | I-11 | A paused or quarantined Recipe starts no new writes | Runner state checks before each write | `test_global_pause_holds_a_run_and_resume_continues_it` |
-| I-12 | Importing a Recipe never carries over credentials or approvals | Not applicable yet: there is no import feature | (none) |
+| I-12 | Importing a Recipe never carries over credentials or approvals | Exports hold the plan and its digest only; an import is verified, recompiled locally and starts unapproved | `test_recipe_export_import_carries_no_approval_and_detects_tampering` |
 
 ## Threats and what stops them
 
@@ -41,6 +41,9 @@ These promises cover **Capalis-managed steps**, not arbitrary Hermes tool calls.
 | An injected tool result tells the model to approve | Approval is a slash command checked against the sender's id and the version digest; no model tool can approve. |
 | Someone else posts in the trigger channel | The sender allowlist (Capalis's own, on top of Hermes's) refuses and logs it. |
 | A bot's own replies retrigger the Recipe | Bot messages are ignored at intake. |
+| A reporter's "thanks!" reply opens a second issue | Replies (Discord replies, Slack thread messages) never start a run. |
+| Another plugin's tool is used to do something unapproved | Other tools run only under an owner-approved, tested, read-only contract; any change sends the contract back to "proposed". |
+| A scheduled Recipe fires twice, or floods after downtime | Each slot is deduplicated by its minute, and only the latest missed slot fires. |
 | A timeout after the provider stored the write | The effect is looked up by its key before anything is retried; "not found" counts only after the settle window. |
 | A provider answers "ok" but stored something else | The independent read-back disagrees, the step fails and dependents are blocked. |
 | A token is revoked, or an API changes shape | Availability and schema are pinned; the next write is blocked and the Recipe is quarantined. |

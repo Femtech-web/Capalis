@@ -81,7 +81,7 @@ class World:
         channel = self.messages.setdefault(call.inputs["channel"], [])
         ts = f"1800000000.{len(channel) + 1:06d}"
         channel.append({"ts": ts, "channel": call.inputs["channel"], "text": call.inputs["text"],
-                        "key": call.idempotency_key})
+                        "key": call.idempotency_key, "thread_ts": call.inputs.get("thread_ts")})
         return {"ts": ts, "channel": call.inputs["channel"]}
 
     def _message_find(self, call: Invocation) -> dict[str, Any]:
@@ -207,14 +207,23 @@ class FakeDirectory:
         return self.resolved(self.repo, self.repo)
 
     def slack_channel(self, name: str) -> Any:
+        if name.lstrip("#") in ("bugs", "C0BUGS00001"):
+            return self.resolved("C0BUGS00001", "#bugs")
         return self.resolved(self.slack, "#engineering")
 
     def discord_channel(self, name: str) -> Any:
         return self.resolved(self.discord, "#bugs", "in Capalis Test")
 
-    def discord_user(self, name: str, channel_id: str) -> Any:
+    def slack_user(self, name: str) -> Any:
         from capalis.adapters.directory import ResolveError
 
         if name.lstrip("@") != "ada":
+            raise ResolveError(f"no Slack user named {name}")
+        return self.resolved("U0ADA00001", "@ada")
+
+    def discord_user(self, name: str, channel_id: str) -> Any:
+        from capalis.adapters.directory import ResolveError
+
+        if name.lstrip("@") not in ("ada", self.reporter):
             raise ResolveError(f"could not find {name} in #bugs")
         return self.resolved(self.reporter, "@ada")

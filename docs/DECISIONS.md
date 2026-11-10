@@ -50,3 +50,10 @@ The public digest of the project's decision log. Each line gives the decision an
 | D-031 | Approve with a button, bound to the version shown | Nobody copies a digest, and a click can't approve a version you weren't shown. |
 | D-032 | `/capalis setup` | Each gap comes with the exact fix in plain words. |
 | D-033 | The reporter hears back twice, honestly | An immediate "tracked as #N", then a closing reply that says whether it was fixed. |
+| D-034 | Slack intake with threaded replies; replies never start a report | For teams without Discord, and to fix a loop found in design: a "thanks!" reply would have opened a second issue. |
+| D-035 | Owner alerts from the event log | One message per event that needs a person, sent once, surviving restarts, with no backlog flood when first enabled. |
+| D-036 | Schedules fire once per slot and never backfill | Recurring work with no duplicate runs. |
+| D-037 | Show what changed before approval | Upgrades are never silent. |
+| D-038 | Export and import without approvals | Evidence bundles for reviewers; shareable Recipes that need local approval again, with edited exports refused. |
+| D-039 | Other Hermes tools through owner-approved, read-only contracts | Any plugin's read tool can be a step or an independent check. Writes wait for sandbox contract tests. |
+| D-040 | Close the small PRD gaps | Reliability from your own runs, presentation preference, cancel, and a status that is never stale. |

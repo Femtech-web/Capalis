@@ -27,9 +27,14 @@ Add only the credentials you need. The easiest place is Hermes Desktop, under **
 | Slack | A Slack app bot token with `chat:write`, `channels:read` and `channels:history` (plus `groups:*` for private channels). Invite the bot to the channel. | `CAPALIS_SLACK_BOT_TOKEN` |
 | Discord | A Discord bot with **View Channel**, **Send Messages** and **Read Message History** in your channel, and the **Message Content** intent on | `CAPALIS_DISCORD_BOT_TOKEN` |
 
-For Discord or Slack messages to *start* a Recipe, Hermes's own gateway has to be connected to that platform (`hermes gateway setup`). For Discord, also set these and restart the gateway:
-- `DISCORD_FREE_RESPONSE_CHANNELS`: your trigger channel, so messages arrive without an @mention.
-- `DISCORD_ALLOWED_USERS`: the people who may report.
+For Discord or Slack messages to *start* a Recipe, Hermes's own gateway has to be connected to that platform (`hermes gateway setup`). Then set these and restart the gateway:
+
+| Reports arrive in | Set |
+| --- | --- |
+| Discord | `DISCORD_FREE_RESPONSE_CHANNELS` (your trigger channel, so messages arrive without an @mention) and `DISCORD_ALLOWED_USERS` (the people who may report) |
+| Slack | `SLACK_FREE_RESPONSE_CHANNELS` and `SLACK_ALLOWED_USERS`, in the same way |
+
+Optional: set **Alerts channel** (for example `slack:#ops` or `discord:#ops`). Capalis posts there when something needs a person: a Recipe quarantined, a write it couldn't check, a step waiting for confirmation, a failed run. Each message comes with the exact command to type.
 
 ## 3. Check everything is ready
 
@@ -59,7 +64,13 @@ Ask in plain words, using names, not ids:
 
 Hermes shows what each name resolved to (for example "#bugs is channel 1569… in Your Team"). It then builds the Recipe and runs it once in **shadow mode**: reads are real, writes are only simulated, and nothing is sent anywhere.
 
-If you want to choose between options, say "compare first". For example, Capalis will explain that a Slack incoming webhook is simpler but its posts can't be read back, while the Slack bot's can.
+Reports in Slack instead? Say "reports arrive in Slack #support", and replies go into each report's thread.
+
+Not about bugs? There's a ready-made **site watch** too:
+
+> Check https://myshop.com/checkout every 10 minutes and tell #ops in Slack if it's down.
+
+If you want to choose between options, say "compare first". To make that your default, type `/capalis prefer compare` (or `recommend`). For example, Capalis will explain that a Slack incoming webhook is simpler but its posts can't be read back, while the Slack bot's can.
 
 ## 5. Approve
 
@@ -72,7 +83,7 @@ You get a one-paragraph summary and two buttons:
 > When @ada posts in #bugs, it will open an issue in my-app (if needed), then post in #engineering, then post in #bugs, then wait until the issue is closed, then post in #bugs. Every write is read back independently before it counts as done.
 > **[Approve]  [Not now]**
 
-The approval covers exactly the version you were shown, for 30 days. If the Recipe changes, it needs a new approval. Use `/capalis show bug-reports` for every step, target and limit.
+The approval covers exactly the version you were shown, for 30 days. If the Recipe changes, it needs a new approval, and the summary starts with **what changed since the last version**. Use `/capalis show bug-reports` for every step, target and limit.
 
 ## 6. Use it
 
@@ -90,6 +101,9 @@ Ask a teammate to post a bug in #bugs. Within seconds:
 | Stop everything right now | `/capalis pause` (and `/capalis resume` later) |
 | Stop one Recipe | `/capalis pause bug-reports` |
 | Withdraw approval | `/capalis revoke bug-reports` |
+| Stop one run | `/capalis cancel <run>` |
+| Keep a record for a reviewer | `/capalis export <run>` (writes Markdown and JSON) |
+| Share a Recipe with another team | Ask Hermes to export it. Importing it elsewhere checks it hasn't been edited, rebuilds it against their tools, and needs their own approval; no credentials or approvals travel with it. |
 
 ## What the words mean
 
@@ -101,6 +115,16 @@ Ask a teammate to post a bug in #bugs. Within seconds:
 | **needs attention** | A write's outcome is unknown and can't be checked automatically. Capalis won't guess; answer with `/capalis resolve <run> <step> applied` or `not-applied`. |
 | **quarantined** | Something the Recipe depends on changed (a token, a permission, a service's shape). Nothing more is written. Ask Hermes to rebuild the Recipe, then approve the new version. |
 | **shadow** | A practice run: real reads, simulated writes, nothing sent. |
+
+## Using other Hermes tools
+
+Capalis's own connections cover GitHub, Slack, Discord and web pages. Another Hermes tool (built-in, or from another plugin you've installed) can take part as a read step or an extra check:
+
+1. Ask Hermes: "Propose a Capalis contract for the read_file tool."
+2. `/capalis contract test hermes:read_file` calls it once and shows you what it returned.
+3. `/capalis contract approve hermes:read_file` lets Recipes use it. `/capalis contract revoke …` stops it, and quarantines the Recipes that use it.
+
+Only tools that read can be approved this way.
 
 ## Team approvals
 

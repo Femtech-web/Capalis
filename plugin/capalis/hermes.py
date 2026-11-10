@@ -35,6 +35,14 @@ class ServiceHolder:
                 self._service = self._factory()
             return self._service
 
+    def _alert_channel(self) -> str | None:
+        try:
+            settings = self.ctx.get_config() or {}
+        except Exception:
+            return None
+        value = settings.get("alert_channel") if isinstance(settings, dict) else None
+        return str(value) if value else None
+
     def _approvers(self) -> Sequence[str]:
         try:
             settings = self.ctx.get_config() or {}
@@ -44,14 +52,18 @@ class ServiceHolder:
         return [str(v) for v in value] if isinstance(value, list) else ()
 
     def _build(self) -> Capalis:
-        from plugins.plugin_storage import plugin_db
+        from plugins.plugin_storage import plugin_data_dir, plugin_db
 
         secrets = [v for name in (GITHUB_TOKEN, SLACK_BOT_TOKEN, SLACK_WEBHOOK_URL, DISCORD_BOT_TOKEN)
                    if (v := inventory.hermes_secret(name))]
         store = Store(plugin_db(PLUGIN, "capalis.db"), redactor=Redactor(secrets))
         transport = UrllibTransport()
         service = Capalis(store, inventory.build(transport=transport), approvers=self._approvers,
-                          directory=Directory(transport, inventory.hermes_secret))
+                          directory=Directory(transport, inventory.hermes_secret),
+                          alert_channel=self._alert_channel,
+                          export_dir=lambda: plugin_data_dir(PLUGIN) / "exports",
+                          dispatch=getattr(self.ctx, "dispatch_tool", None),
+                          has_plugin=getattr(self.ctx, "has_plugin", None))
         service.ensure_worker()
         return service
 
@@ -66,6 +78,10 @@ class ServiceHolder:
             sender = str(getattr(source, "user_id", "") or getattr(event, "user_id", "") or "")
             message_id = str(getattr(event, "message_id", "") or getattr(source, "message_id", "") or "")
             if not chat_id or not sender or not message_id:
+                return None
+            # A reply (a Discord reply, a Slack thread message) continues a conversation; it is not a new report.
+            thread = str(getattr(source, "thread_id", "") or "")
+            if getattr(event, "reply_to_message_id", None) or (thread and thread != message_id):
                 return None
             submission = self.get().on_message(
                 platform=platform, chat_id=chat_id, sender=sender, message_id=message_id,

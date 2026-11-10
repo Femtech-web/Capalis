@@ -27,4 +27,18 @@ First release, for the Nous Research Hermes Agent plugin hackathon.
   - `/capalis setup` with exact fixes;
   - plain-text status, runs and evidence;
   - the reporter is thanked at once and told how the issue was closed.
+- **More than bug reports:**
+  - Slack-channel intake with replies in the report's thread;
+  - schedule triggers (UTC cron, once per slot, never backfilled);
+  - a ready-made site-watch Recipe.
+- **Owner alerts** to a channel you choose, when something needs a person.
+- **Other Hermes tools** in Recipes, as read steps or independent checks, under owner-tested and owner-approved read-only contracts (`ctx.dispatch_tool`).
+- **No silent upgrades:** a new version shows what changed, in `show` and in the approval summary.
+- **Sharing:** Recipe export and import (digest-checked, recompiled locally, never carrying approvals), plus reviewer evidence bundles (`/capalis export`).
+- **Smaller commands:** reliability counts from your own live runs in comparisons, `/capalis prefer`, and `/capalis cancel`.
 - **Evidence:** a hash-chained, redacted event log, plus `JUDGES.md` generated from a real test run and the latest live run.
+
+### Fixed
+- A reply to Capalis's own acknowledgement could have been treated as a new report; replies never start a run.
+- GitHub's issue list lags behind new issues, so "not found" now counts only after a settle window.
+- The secret scan flagged a public Discord channel id in a test fixture; that rule is disabled, and token rules stay on.

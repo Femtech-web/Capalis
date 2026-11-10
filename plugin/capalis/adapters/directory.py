@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 import urllib.parse
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +16,7 @@ from .catalog import DISCORD_BOT_TOKEN, GITHUB_TOKEN, SLACK_BOT_TOKEN
 from .http import Response, Transport, TransportError
 
 SLACK_ID = re.compile(r"[CGD][A-Z0-9]{8,12}")
+SLACK_USER = re.compile(r"[UW][A-Z0-9]{8,12}")
 SNOWFLAKE = re.compile(r"[0-9]{17,20}")
 REPO = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
 MAX_PAGES = 10
@@ -98,6 +99,37 @@ class Directory:
                 break
             query["cursor"] = cursor
         raise ResolveError(f"no Slack channel named #{wanted} that the Capalis bot can see")
+
+    def slack_user(self, name: str) -> Resolved:
+        if SLACK_USER.fullmatch(name.strip()):
+            user = self._slack("users.info", user=name.strip())["user"]
+            return Resolved(user["id"], f"@{(user.get('profile') or {}).get('display_name') or user.get('name')}")
+        wanted = _clean(name, "@")
+
+        def names_of(user: Mapping[str, Any]) -> set[str]:
+            profile = user.get("profile") or {}
+            return {str(v or "").lower() for v in (user.get("name"), user.get("real_name"),
+                                                   profile.get("display_name"), profile.get("real_name"))} - {""}
+
+        users: list[Mapping[str, Any]] = []
+        query: dict[str, Any] = {"limit": 200}
+        for _ in range(MAX_PAGES):
+            data = self._slack("users.list", **query)
+            users += [u for u in data.get("members", []) if not u.get("deleted") and not u.get("is_bot")]
+            cursor = (data.get("response_metadata") or {}).get("next_cursor")
+            if not cursor:
+                break
+            query["cursor"] = cursor
+        exact = {u["id"]: u for u in users if wanted in names_of(u)}
+        loose = {u["id"]: u for u in users
+                 if any(n.startswith(wanted) or any(w.startswith(wanted) for w in n.split()) for n in names_of(u))}
+        found = exact or loose
+        if len(found) == 1:
+            user = next(iter(found.values()))
+            return Resolved(str(user["id"]), f"@{(user.get('profile') or {}).get('display_name') or user.get('name')}")
+        if found:
+            raise ResolveError(f"several Slack users match @{wanted}; give their member id")
+        raise ResolveError(f"no Slack user named @{wanted}")
 
     def discord_channel(self, name: str) -> Resolved:
         if SNOWFLAKE.fullmatch(name.strip()):
@@ -200,7 +232,8 @@ class Check:
     fix: str = ""
 
 
-def readiness(directory: Directory, targets: set[str], discord_triggers: set[str]) -> list[Check]:
+def readiness(directory: Directory, targets: set[str], discord_triggers: set[str],
+              slack_triggers: Iterable[str] = ()) -> list[Check]:
     """Plain-language setup check: credentials, identities, and access to every target in use."""
     from .catalog import DISCORD_BOT_TOKEN, GITHUB_TOKEN, SLACK_BOT_TOKEN
 
@@ -243,6 +276,15 @@ def readiness(directory: Directory, targets: set[str], discord_triggers: set[str
         except (ResolveError, PermissionError) as exc:
             checks.append(Check(kind.split(".")[0].title(), False, f"{value}: {exc}",
                                 "give the Capalis bot access to it, or pick another target"))
+    for channel in sorted(slack_triggers):
+        try:
+            shown = f"{directory.slack_channel(channel).label} ({channel})"
+        except (ResolveError, PermissionError):
+            shown = channel
+        checks.append(Check("Hermes gateway", None,
+                            f"Slack messages in {shown} reach Capalis only if the gateway lists it",
+                            f"set SLACK_FREE_RESPONSE_CHANNELS to include {channel} and add reporters to "
+                            "SLACK_ALLOWED_USERS, then restart the gateway"))
     for channel in sorted(discord_triggers):
         try:
             shown = f"{directory.discord_channel(channel).label} ({channel})"

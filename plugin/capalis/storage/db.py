@@ -132,6 +132,18 @@ MIGRATIONS: tuple[str, ...] = (
     """
     CREATE TABLE names (key TEXT PRIMARY KEY, label TEXT NOT NULL, updated_at INTEGER NOT NULL);
     """,
+    # 3: capability contracts for other Hermes tools: proposed -> tested -> approved (or revoked).
+    """
+    CREATE TABLE contracts (
+        capability_id TEXT PRIMARY KEY,
+        spec TEXT NOT NULL,
+        digest TEXT NOT NULL,
+        state TEXT NOT NULL,
+        test TEXT,
+        actor TEXT,
+        updated_at INTEGER NOT NULL
+    );
+    """,
 )
 
 PRESENTATIONS = frozenset({"recommend", "compare", "ask"})
@@ -365,6 +377,24 @@ class Store:
                        ("1" if paused else "0", self.clock()))
             self._event(tx, "control.global_pause", {"paused": paused, "actor": actor, "reason": reason})
 
+    def control(self, key: str) -> str | None:
+        row = self._one("SELECT value FROM controls WHERE key = ?", (key,))
+        return None if row is None else str(row[0])
+
+    def set_control(self, key: str, value: str) -> None:
+        with self._tx() as tx:
+            tx.execute("INSERT INTO controls VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                       "updated_at = excluded.updated_at", (key, value, self.clock()))
+
+    def last_event_seq(self) -> int:
+        row = self._one("SELECT MAX(seq) FROM events")
+        return int(row[0]) if row and row[0] is not None else 0
+
+    def events_after(self, seq: int, limit: int = 200) -> list[EventRecord]:
+        rows = self._read("SELECT seq, at, kind, run_id, payload, prev_hash, hash FROM events WHERE seq > ? "
+                          "ORDER BY seq LIMIT ?", (seq, limit))
+        return [EventRecord(r[0], r[1], r[2], r[3], json.loads(r[4]), r[5], r[6]) for r in rows]
+
     def global_paused(self) -> bool:
         row = self._one("SELECT value FROM controls WHERE key = 'global_pause'")
         return row is not None and row[0] == "1"
@@ -389,6 +419,32 @@ class Store:
             for key, label in labels.items():
                 tx.execute("INSERT INTO names VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET label = excluded.label, "
                            "updated_at = excluded.updated_at", (key, self.redactor.text(label), now))
+
+    def save_contract(self, capability_id: str, spec: Mapping[str, Any], digest: str) -> None:
+        """A new or changed contract always starts over as proposed: approval never survives a change."""
+        with self._tx() as tx:
+            tx.execute("INSERT INTO contracts VALUES (?, ?, ?, 'proposed', NULL, NULL, ?) ON CONFLICT(capability_id) "
+                       "DO UPDATE SET spec = excluded.spec, digest = excluded.digest, state = 'proposed', test = NULL, "
+                       "actor = NULL, updated_at = excluded.updated_at WHERE contracts.digest != excluded.digest "
+                       "OR contracts.state = 'revoked'",
+                       (capability_id, canonical_json(spec), digest, self.clock()))
+            self._event(tx, "contract.proposed", {"capability_id": capability_id, "digest": digest})
+
+    def set_contract_state(self, capability_id: str, state: str, *, actor: str, test: Any = None) -> None:
+        with self._tx() as tx:
+            updated = tx.execute("UPDATE contracts SET state = ?, actor = ?, test = COALESCE(?, test), updated_at = ? "
+                                 "WHERE capability_id = ?",
+                                 (state, actor, None if test is None else canonical_json(self.redactor.value(test)),
+                                  self.clock(), capability_id))
+            if updated.rowcount != 1:
+                raise StoreError(f"no contract {capability_id}")
+            self._event(tx, f"contract.{state}", {"capability_id": capability_id, "actor": actor})
+
+    def contracts(self) -> list[dict[str, Any]]:
+        rows = self._read("SELECT capability_id, spec, digest, state, test, actor FROM contracts "
+                          "ORDER BY capability_id")
+        return [{"capability_id": r[0], "spec": json.loads(r[1]), "digest": r[2], "state": r[3],
+                 "test": None if r[4] is None else json.loads(r[4]), "actor": r[5]} for r in rows]
 
     def names(self) -> dict[str, str]:
         return {key: label for key, label in self._read("SELECT key, label FROM names")}

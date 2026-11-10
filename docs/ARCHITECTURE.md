@@ -14,13 +14,13 @@ flowchart TB
   end
 
   subgraph Plugin["Capalis plugin"]
-    surfaces["adapters/surfaces.py<br/>6 model tools + /capalis command"]
+    surfaces["adapters/surfaces.py<br/>7 model tools + /capalis command"]
     hook["hermes.py<br/>pre_gateway_dispatch intake"]
     service["service.py<br/>application service"]
     runner["runtime/runner.py<br/>controlled runner"]
     store[("storage/db.py<br/>SQLite: Recipes, grants,<br/>runs, intents, event chain")]
     core["core/ (pure)<br/>compiler, policy, lifecycle,<br/>verification, drift, matching"]
-    adapters["adapters/<br/>GitHub, Slack, Discord, HTTPS GET"]
+    adapters["adapters/<br/>GitHub, Slack, Discord, HTTPS GET,<br/>approved Hermes tools"]
   end
 
   providers["GitHub · Slack · Discord"]
@@ -116,6 +116,14 @@ Each write names an outcome contract: a separate read-only probe, its inputs and
 
 A disagreement (`not_met`) fails the step at once and blocks its dependents. Probe errors are retried until the contract's deadline; after that the step is `unverified`. A run is `verified` only when every write's required checks were met.
 
+## Beyond one run
+
+- **Schedules.** A pure cron (`core/cron.py`, UTC). The worker fires live schedule Recipes. Each slot's minute is its dedupe value, so it fires once across workers and restarts; counting starts at approval, and after downtime only the latest missed slot fires.
+- **Owner alerts.** A cursor over the event log turns events that need a person into one message each, posted to the owner's chosen channel. The cursor advances only after delivery and starts at "now" when alerts are enabled.
+- **Other Hermes tools** (`core/contracts.py`, `adapters/hermes_tools.py`). An owner-approved, read-only capability contract turns a Hermes tool into a `hermes:<tool>` capability, called through `ctx.dispatch_tool`. A proposal is inert, the test is a real call checked against the declared schema, and approval is an owner command. Any change returns the contract to "proposed".
+- **Versions.** `core/diff.py` explains what changed since the previous version. That diff appears in `show`, in compile results and in the approval summary.
+- **Export and import.** Evidence bundles (Markdown and JSON). Recipes travel as `capalis-recipe/1` with their digest: an import is verified, rebuilt from the wire form against the importer's capabilities, and starts unapproved.
+
 ## Data
 
 | Table | Holds |
@@ -125,14 +133,16 @@ A disagreement (`not_met`) fails the step at once and blocks its dependents. Pro
 | `runs` | One per trigger, unique on (recipe, mode, dedupe value); stored redacted payload, lease, resume time |
 | `step_attempts` | Every attempt: idempotency key, effect, target, state, redacted output |
 | `observations` | Every independent check, with its verdict |
-| `confirmations`, `controls`, `preferences`, `names` | Per-run confirmations, global pause, presentation preference, display names |
+| `confirmations`, `controls`, `preferences`, `names` | Per-run confirmations, global pause, alert and schedule cursors, presentation preference, display names |
+| `contracts` | Capability contracts for other Hermes tools: proposed → tested → approved (or revoked) |
 | `events` | Append-only, hash-chained, redacted audit log |
 
 ## Hermes integration points
 
 | Surface | Used for | Source in v0.23.0 |
 | --- | --- | --- |
-| `ctx.register_tool` | 6 model tools (deferred, loaded through Tool Search) | `hermes_cli/plugins.py` |
+| `ctx.register_tool` | 7 model tools (deferred, loaded through Tool Search) | `hermes_cli/plugins.py` |
+| `ctx.dispatch_tool`, `ctx.has_plugin` | Running another Hermes tool under an approved read-only contract | `hermes_cli/plugins.py` |
 | `ctx.register_command` + `ask_choice` | `/capalis` and its Approve / Not now buttons | `hermes_cli/plugins.py`, `hermes_cli/plugin_choices.py` |
 | `pre_gateway_dispatch` hook | Messages in a Recipe's channel become triggers | `website/docs/user-guide/features/hooks.md` |
 | `plugins.plugin_storage.plugin_db` | The SQLite file under `plugin-data/capalis/` | `plugins/plugin_storage.py` |

@@ -79,7 +79,7 @@ def test_restart_reloads_the_exact_compiled_recipe(open_store: Callable[[], Stor
     store.set_global_pause(True, actor="owner", reason="maintenance")
 
     reopened = open_store()
-    assert reopened.migrate() == 2
+    assert reopened.migrate() == 3
     assert reopened.recipe(recipe.digest) == recipe
     assert reopened.recipe_state(recipe.digest) is RecipeState.LIVE
     assert reopened.global_paused()

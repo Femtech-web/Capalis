@@ -84,6 +84,27 @@ CLAIMS: list[tuple[str, str, list[str]]] = [
      ["test_service.py::test_reporter_hears_back_when_the_issue_is_closed",
       "test_service.py::test_ambiguous_discord_reply_is_found_by_its_text_not_resent",
       "test_adapters.py::test_discord_lookup_matches_only_this_bots_reply_with_the_same_text"]),
+    ("A reply is never mistaken for a new report, on Discord or in Slack threads.",
+     "A \"thanks!\" under Capalis's acknowledgement starts nothing; Slack reports get their replies in the thread.",
+     ["test_service.py::test_replies_never_start_a_new_report",
+      "test_service.py::test_slack_intake_replies_in_the_reports_thread",
+      "test_adapters.py::test_slack_thread_replies_post_find_and_read_back_inside_the_thread"]),
+    ("Schedules fire once per slot and never flood after downtime.",
+     "Each slot is deduplicated by its minute; counting starts at approval; only the latest missed slot runs.",
+     ["test_cron.py::test_latest_missed_slot_fires_once",
+      "test_service.py::test_site_watch_fires_on_schedule_and_alerts_once_per_slot"]),
+    ("The owner is told when something needs a person, once.",
+     "Quarantines, unknown effects, confirmations and failed runs become one alert each, retried until delivered.",
+     ["test_service.py::test_owner_alerts_are_sent_once_from_now_on"]),
+    ("Upgrades are never silent, and shared Recipes never carry approvals.",
+     "A new version lists what changed before approval; an import is digest-checked, recompiled and unapproved.",
+     ["test_service.py::test_a_new_version_shows_what_changed_before_approval",
+      "test_service.py::test_recipe_export_import_carries_no_approval_and_detects_tampering"]),
+    ("Other Hermes tools run only after a passing test and the owner's approval.",
+     "A proposed contract is inert; writes are refused; any change or revocation takes it out of Recipes.",
+     ["test_service.py::test_another_hermes_tool_runs_only_after_a_passing_test_and_owner_approval",
+      "test_service.py::test_a_changed_contract_must_be_tested_and_approved_again",
+      "test_service.py::test_a_failing_contract_test_cannot_be_approved"]),
     ("Runs survive restarts.",
      "Parked waits, re-checks and interrupted runs resume from the store with the same decisions.",
      ["test_runner.py::test_durable_wait_survives_restart_and_completes",
@@ -91,10 +112,12 @@ CLAIMS: list[tuple[str, str, list[str]]] = [
 ]
 
 LIMITS = [
+    "Slack-channel intake, owner alerts, schedules and contracts for other Hermes tools pass their tests here, but "
+    "have not yet run on the owner's accounts.",
     "Slack incoming webhooks cannot read messages back, so Capalis reports them as unverifiable and never "
     "recommends them where a check is required.",
-    "Only Capalis's reviewed adapters (GitHub Issues, Slack, HTTPS GET) can run in Recipes. Other Hermes tools "
-    "are not executable until a contract test characterizes them.",
+    "Writes run only through Capalis's reviewed adapters (GitHub Issues, Slack, Discord, HTTPS GET); other Hermes "
+    "tools join as read steps and checks under owner-approved contracts.",
     "The event log is hash-chained to detect edits and deletions; it does not stop someone who can rewrite the "
     "whole database.",
     "Discord intake needs the channel listed in DISCORD_FREE_RESPONSE_CHANNELS so unmentioned messages reach Hermes.",
@@ -166,9 +189,15 @@ def main() -> None:
         tests = "<br>".join(f"`{t}` ({s})" for t, s in item["tests"].items())
         lines.append(f"| {item['claim']} | {item['how']} | {tests} | {'yes' if item['holds'] else '**no**'} |")
     lines += ["", "## Owner-run live loop", "",
-              "On 2026-11-10 the owner ran the full loop on their own Discord, GitHub and Slack accounts. The report "
-              "became issue #4, Slack was notified, the issue was closed, and Capalis replied under the Discord "
-              "message. All three writes were read back independently (`met`), and the run ended `verified`. "
+              "On 2026-11-10 the owner ran the full loop on their own Discord, GitHub and Slack accounts, through a "
+              "real Hermes chat and the Hermes gateway:", "",
+              "| Run | What happened | Independent checks |", "| --- | --- | --- |",
+              "| `7994c4cf` | Discord report -> issue #3 -> Slack notice | 2 of 2 V1 met, verified |",
+              "| `5d7da41e` | ... then the owner closed the issue, and Capalis replied under the report | "
+              "3 of 3 V1 met, verified |",
+              "| `75415396` | A changed GitHub capability quarantined the old version; the model rebuilt it from "
+              "names; issue #5, Slack, \"tracked as #5\", closed, \"fixed and closed\" | 4 of 4 V1 met, verified |",
+              "",
               "Screenshots: [docs/assets](docs/assets).", "",
               "## Live run on real services (automated)", ""]
     if live is None:

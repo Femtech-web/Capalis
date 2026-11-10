@@ -117,3 +117,35 @@ def grant_from_wire(wire: Mapping[str, Any]) -> ApprovalGrant:
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise WireError(f"stored grant is malformed: {exc}") from exc
+
+
+def wire_to_draft(wire: Mapping[str, Any]) -> dict[str, Any]:
+    """A stored Recipe as a draft, for import into another install: it is compiled there against that
+    install's own capabilities, and carries no owner, approval or pins."""
+    trigger = dict(wire["trigger"])
+    draft_trigger: dict[str, Any] = {"kind": trigger["kind"], "payload_schema": trigger["payload_schema"],
+                                     "max_runs_per_hour": trigger["max_runs_per_hour"]}
+    if trigger["kind"] == "event":
+        draft_trigger.update(source=trigger["source"], senders=list(trigger["senders"]),
+                             dedupe_key=trigger["dedupe_key"])
+    if trigger.get("schedule"):
+        draft_trigger["schedule"] = trigger["schedule"]
+    steps = []
+    for raw in wire["steps"]:
+        step: dict[str, Any] = {"id": raw["id"], "kind": raw["kind"], "capability": raw["capability"],
+                                "effect": raw["effect"], "inputs": raw["inputs"], "after": list(raw["depends_on"]),
+                                "retry": raw["retry"], "timeout_s": raw["timeout_s"]}
+        if raw["effect"] != "read":
+            step["idempotency"] = raw["idempotency"]
+        for optional in ("when", "unverifiable_reason", "wait"):
+            if raw.get(optional) is not None:
+                step[optional] = raw[optional]
+        if raw["verify"]:
+            step["verify"] = [{key: contract[key] for key in ("id", "probe", "inputs", "expect", "level",
+                                                               "deadline_s", "freshness_s", "required")}
+                              for contract in raw["verify"]]
+        steps.append(step)
+    return {"intent": wire["intent"], "trigger": draft_trigger, "steps": steps, "budgets": dict(wire["budgets"]),
+            "approval": {"per_run_confirmation": list(wire["approval"]["per_run_confirmation"]),
+                         "grant_ttl_s": wire["approval"]["grant_ttl_s"]},
+            "retention_days": wire["retention_days"]}

@@ -1,27 +1,30 @@
 # Draft entry for plugin-catalog/capalis.yaml in NousResearch/hermes-agent.
-# Before opening the PR: set repo, pin sha to the full 40-character commit you push, and set maintainer.
+# Before opening the PR: make the repository public, then pin sha to the full 40-character commit you push.
 name: capalis
-repo: https://github.com/<owner>/<repo>
+repo: https://github.com/Femtech-web/Capalis
 sha: <40-character commit sha>
 subdir: plugin
 description: >-
-  Capability intelligence and Verified Recipes. Compare capabilities for a goal, compile a scoped,
-  versioned Recipe (e.g. Discord bug report -> GitHub issue -> Slack notice), shadow-run it, run it only
-  after the owner approves that exact version with /capalis approve, verify every write by independent
-  read-back, never blindly retry an uncertain write, and quarantine the Recipe when a dependency changes.
-  Disclosure: calls api.github.com, slack.com and discord.com (and a Slack webhook if configured) with the user's
-  tokens, and credential-free HTTPS GETs to origins an approved Recipe names; stores Recipes, approvals
-  and redacted run records in plugin-data/capalis/; consumes chat messages in channels a Recipe listens
-  to (via pre_gateway_dispatch); runs a daemon thread in the gateway that advances runs every 30 s. No
-  shell commands, subprocesses, telemetry or self-updating.
-maintainer: <github username>
+  Your AI agent says "done"; Capalis makes it prove it. Describe a workflow in chat (e.g. Discord or Slack bug
+  report -> GitHub issue -> Slack notice -> reply to the reporter when it's closed, or a scheduled site watch).
+  Capalis compiles it into a scoped, versioned Recipe, shadow-runs it, and runs it only after the owner approves
+  that exact version (/capalis approve, with a button). It verifies every write by independent read-back,
+  never blindly retries an uncertain write, and quarantines the Recipe when a dependency changes. Other
+  Hermes tools can join as read steps under owner-tested, owner-approved contracts. Disclosure: calls
+  api.github.com, slack.com and discord.com (and a Slack webhook if configured) with the user's tokens, and
+  credential-free HTTPS GETs to origins an approved Recipe names; calls other Hermes tools via
+  ctx.dispatch_tool only under approved read-only contracts; stores Recipes, approvals and redacted run records
+  in plugin-data/capalis/ (evidence exports in plugin-data/capalis/exports/); consumes chat messages in channels
+  a Recipe listens to (pre_gateway_dispatch) and posts owner alerts to a channel the owner sets; runs a daemon
+  thread in the gateway every 30 s. No shell commands, subprocesses, telemetry or self-updating.
+maintainer: Femtech-web
 tier: community
 category: automation
-docs_url: https://github.com/<owner>/<repo>#readme
+docs_url: https://github.com/Femtech-web/Capalis#readme
 version: "0.1.0"
 platforms: []
 capabilities:
-  provides_tools: [capalis_status, capalis_setup, capalis_capabilities, capalis_recipe, capalis_run, capalis_pause]
+  provides_tools: [capalis_status, capalis_setup, capalis_capabilities, capalis_recipe, capalis_run, capalis_contract, capalis_pause]
   provides_hooks: [pre_gateway_dispatch]
   provides_middleware: []
   requires_env: []

@@ -2,7 +2,7 @@
 
 ```bash
 uv sync --group dev
-make check     # ruff, mypy --strict, pytest (276 cases including parametrized ones; the live test is skipped unless you opt in)
+make check     # ruff, mypy --strict, pytest (300 cases including parametrized ones; the live test is skipped unless you opt in)
 make judge     # regenerate JUDGES.md and docs/results/<date>.json from a fresh run
 make e2e       # live run on your own sandbox accounts (opt-in, see below)
 ```
@@ -11,11 +11,11 @@ make e2e       # live run on your own sandbox accounts (opt-in, see below)
 
 | Layer | Files | What it covers |
 | --- | --- | --- |
-| Pure core | `tests/unit/test_compiler*.py`, `test_expressions_and_schema.py`, `test_policy_and_lifecycle.py`, `test_verification_and_drift.py`, `test_matching.py`, `test_wire_and_redact.py` | 38 rejection mutations of the golden Recipe, typed references and templates, fail-closed authorization, transition tables, outcome contracts, drift, deterministic capability matching, wire round-trips, redaction |
+| Pure core | `tests/unit/test_compiler*.py`, `test_expressions_and_schema.py`, `test_policy_and_lifecycle.py`, `test_verification_and_drift.py`, `test_matching.py`, `test_wire_and_redact.py`, `test_cron.py` | 38 rejection mutations of the golden Recipe, typed references and templates, fail-closed authorization, transition tables, outcome contracts, drift, deterministic capability matching, wire round-trips, redaction |
 | Properties | `tests/property/test_core_properties.py` | Hypothesis: hostile payloads never change operations or targets; live authorization implies full grant coverage; transitions follow the tables; the compiler never crashes on arbitrary drafts |
 | Storage | `tests/integration/test_storage.py` | Restarts, immutability, tamper detection, concurrent activation and duplicate deliveries across 6–8 connections, the canary secret absent from database and WAL bytes |
 | Runner | `tests/integration/test_runner.py` | Against in-memory providers with injected faults (`tests/fakes.py`): shadow, duplicates, crashes before and after dispatch, ambiguous writes, false success, revocation, pause, drift, budgets, confirmations, waits, restart, concurrency |
-| Service and surfaces | `tests/integration/test_service.py` | Compile → shadow-qualify → approve (typed and button) → gateway intake → close-the-loop replies; names instead of ids; readable views |
+| Service and surfaces | `tests/integration/test_service.py` | Compile → shadow-qualify → approve (typed and button) → gateway intake → close-the-loop replies; Slack intake in threads; replies never start reports; names instead of ids; version diffs; schedules; owner alerts; export and import; contracts for other Hermes tools; readable views |
 | Adapters | `tests/unit/test_adapters.py`, `test_directory.py` | Request shapes and failure classification for GitHub, Slack and Discord against scripted HTTP replies; name lookups; the setup report |
 | Plugin | `tests/integration/test_plugin_registration.py` | Registrations match `plugin.yaml`; no model tool can approve; the pure core imports nothing from Hermes, the network or files; `private-notes/` is never tracked |
 | Live | `tests/e2e/test_sandbox.py` | Opt-in; see below |

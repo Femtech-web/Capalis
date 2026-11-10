@@ -121,3 +121,14 @@ def test_partial_names_must_be_unambiguous() -> None:
     assert d.discord_user("@ada", "9").value == "3", "an exact match wins over prefixes"
     with pytest.raises(ResolveError, match="several people"):
         d.discord_user("@ad", "9")
+
+
+def test_slack_user_by_display_or_real_name() -> None:
+    members = {"ok": True, "members": [
+        {"id": "U0ADA00001", "name": "ada", "real_name": "Ada Lovelace", "profile": {"display_name": "Ada"}},
+        {"id": "U0BOT00001", "name": "bot", "is_bot": True, "profile": {}},
+        {"id": "U0SAM00001", "name": "sam", "real_name": "Sam Smith", "profile": {"display_name": ""}}]}
+    d = directory({"users.list": ok(members)})
+    assert (d.slack_user("@lovelace").value, d.slack_user("Ada").label) == ("U0ADA00001", "@Ada")
+    with pytest.raises(ResolveError, match="no Slack user"):
+        d.slack_user("@bot")

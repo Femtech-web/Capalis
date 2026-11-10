@@ -32,6 +32,7 @@ ISSUE = _obj({"number": _INT, "title": _STR, "state": _STR, "state_reason": _STR
 MESSAGE = _obj({"ts": _STR, "channel": _STR}, ["ts", "channel"])
 DISCORD_MESSAGE = _obj({"id": _STR, "channel": _STR, "text": _STR}, ["id", "channel", "text"])
 _SNOWFLAKE = {"type": "string", "pattern": "^[0-9]{17,20}$"}
+_SLACK_TS = {"type": "string", "pattern": "^[0-9]{9,11}\\.[0-9]{6}$"}
 _REPO = TargetSpec("repo", "github.repo")
 _CHANNEL = TargetSpec("channel", "slack.channel")
 _DISCORD_CHANNEL = TargetSpec("channel", "discord.channel")
@@ -81,17 +82,19 @@ CATALOG: tuple[CapabilityDescriptor, ...] = (
          output=ISSUE, target=_REPO, auth=GITHUB_TOKEN, operation="issue.get", setup_hint=_GITHUB_SETUP),
     _cap("capalis:slack.message.post", summary="Post a message to one Slack channel as the Capalis bot",
          effect=Effect.EXTERNAL_SEND, inputs={"channel": _STR, "text": {"type": "string", "minLength": 1,
-                                                                        "maxLength": 3000}},
+                                                                        "maxLength": 3000},
+                                              "thread_ts": _SLACK_TS},
          required=["channel", "text"], output=MESSAGE, target=_CHANNEL, auth=SLACK_BOT_TOKEN, operation="message.post",
          idempotency=IdempotencySupport.RECONCILE, reconcile_with="capalis:slack.message.find_by_key",
          readback=("capalis:slack.message.get",), setup_hint=_SLACK_SETUP),
     _cap("capalis:slack.message.find_by_key", summary="Find the message an earlier attempt posted, by its Capalis key",
-         effect=Effect.READ, inputs={"channel": _STR, "idempotency_key": _STR, "since": _INT},
+         effect=Effect.READ, inputs={"channel": _STR, "idempotency_key": _STR, "since": _INT, "thread_ts": _SLACK_TS},
          required=["channel", "idempotency_key"], output=_obj({"found": {"type": "boolean"}, "resource": MESSAGE},
                                                               ["found"]),
          target=_CHANNEL, auth=SLACK_BOT_TOKEN, operation="message.find_by_key", setup_hint=_SLACK_SETUP),
     _cap("capalis:slack.message.get", summary="Read one Slack message back", effect=Effect.READ,
-         inputs={"channel": _STR, "ts": _STR}, required=["channel", "ts"], output=_obj({"text": _STR, "ts": _STR},
+         inputs={"channel": _STR, "ts": _STR, "thread_ts": _SLACK_TS}, required=["channel", "ts"],
+         output=_obj({"text": _STR, "ts": _STR},
                                                                                      ["text", "ts"]),
          target=_CHANNEL, auth=SLACK_BOT_TOKEN, operation="message.get", setup_hint=_SLACK_SETUP),
     _cap("capalis:slack.webhook.post", summary="Post to the Slack channel an incoming webhook is bound to",
