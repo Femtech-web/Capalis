@@ -56,6 +56,9 @@ def status(report: Mapping[str, Any]) -> str:
             lines.append(f"  → /capalis resume {r['recipe_id']}")
     if not report["recipes"]:
         lines.append("• none yet. Ask Hermes to set one up, or send /capalis help")
+    elif any(r["state"] == "live" for r in report["recipes"]):
+        example = next(r["recipe_id"] for r in report["recipes"] if r["state"] == "live")
+        lines.append(f"  To pause one, send /capalis pause and its name, e.g. /capalis pause {example}")
     lines += ["", "Recent runs"]
     for r in report["recent_runs"][:5]:
         lines += _run_lines(r)
@@ -179,16 +182,35 @@ _NOUNS = {"github.issue": "the issue", "slack.message": "the Slack message",
 
 
 def _label(value: str | None, names: Mapping[str, str], kind: str | None = None) -> str:
-    """'#engineering' when a display name is known, else the id."""
+    """'#engineering' when a display name is known, else the id; a web origin as its bare host."""
+    if value and value.startswith("http.origin:"):
+        return value.split("://", 1)[-1]
     full = named(value, names, kind)
     return full.split(" (")[0] if " (" in full else full
+
+
+_DAYS = {"*": "Every day", "1-5": "Every weekday"}
+
+
+def _schedule_words(cron: str) -> str:
+    """The common shapes in words ('Every 10 minutes'); anything else as the cron line, which is exact."""
+    minute, hour, dom, month, dow = (cron.split() + ["?"] * 5)[:5]
+    if (dom, month, dow) == ("*", "*", "*") and hour == "*":
+        if minute.startswith("*/") and minute[2:].isdigit():
+            return f"Every {minute[2:]} minutes" if minute[2:] != "1" else "Every minute"
+        if minute.isdigit():
+            return "Every hour" if minute == "0" else f"Every hour at :{int(minute):02d}"
+    if minute.isdigit() and hour.isdigit() and (dom, month) == ("*", "*") and dow in _DAYS:
+        return f"{_DAYS[dow]} at {int(hour):02d}:{int(minute):02d} UTC"
+    return f"On the schedule {cron} (UTC)"
 
 
 def _trigger_text(desc: Mapping[str, Any]) -> str:
     trigger, names = desc["trigger"], desc.get("names", {})
     if trigger["kind"] == "schedule":
-        return f"On the schedule {trigger.get('schedule')} (UTC)"
-    who = ", ".join(_label(s, names, "discord.user") for s in trigger["senders"]) or "the owner"
+        return _schedule_words(str(trigger.get("schedule") or ""))
+    platform = str(trigger["source"] or "discord").split(":", 1)[0]
+    who = ", ".join(_label(s, names, f"{platform}.user") for s in trigger["senders"]) or "the owner"
     return f"When {who} posts in {_label(trigger['source'], names)}"
 
 
@@ -198,7 +220,7 @@ def approved(desc: Mapping[str, Any], days: int) -> str:
     return "\n".join([f"✅ Approved {desc['recipe_id']} v{desc['version']} for {days} days.", "",
                       f"{_trigger_text(desc)}, it now runs on its own.",
                       f"It can only act in: {', '.join(places)}.", "",
-                      "Stop it any time: /capalis pause"])
+                      f"Pause it any time: /capalis pause {desc['recipe_id']}"])
 
 
 def plain(desc: Mapping[str, Any]) -> str:
@@ -219,6 +241,8 @@ def plain(desc: Mapping[str, Any]) -> str:
     for step in desc["steps"]:
         if step.get("kind") == "wait":
             planned.append((step, f"Wait until {condition(step['wait'].split(', checking')[0])}"))
+        elif step.get("url"):
+            planned.append((step, f"Check {step['url'].split('://', 1)[-1]}"))
         elif step["effect"] != "read":
             verb = _WRITE_WORDS.get(step["capability"], f"{step['effect'].replace('_', ' ')} on")
             planned.append((step, f"{verb[0].upper()}{verb[1:]} {_label(step['target'], names)}"))

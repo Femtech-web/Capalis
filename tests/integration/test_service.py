@@ -481,7 +481,13 @@ def test_site_watch_fires_on_schedule_and_alerts_once_per_slot(tmp_path: Path) -
         compiled = env.tool("capalis_recipe", action="compile", recipe_id="site-watch", draft=out["draft"])
         assert compiled["ok"], compiled
         assert env.tool("capalis_recipe", action="qualify", recipe_id="site-watch", sample_payload={})["qualified"]
-        env.slash(f"approve site-watch {compiled['short_digest']}")
+        asked: list[str] = []
+        surfaces.command(lambda: env.service, ask=lambda q, c: asked.append(q))("approve site-watch", platform="cli")
+        assert "Every 10 minutes, it will:\n• Check shop.example.com/health\n• Post in #engineering" in asked[0]
+        approved = env.slash(f"approve site-watch {compiled['short_digest']}")
+        assert "It can only act in: #engineering, shop.example.com." in approved
+        assert approved.endswith("Pause it any time: /capalis pause site-watch")
+        assert "To pause one, send /capalis pause and its name, e.g. /capalis pause site-watch" in env.slash("")
 
         assert env.service.fire_schedules() == [], "counting starts at approval; nothing is backfilled"
         env.world.http_status["https://shop.example.com/health"] = 503

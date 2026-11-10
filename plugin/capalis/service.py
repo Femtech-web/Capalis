@@ -258,7 +258,7 @@ class Capalis:
         if recipe is None:
             return f"{recipe_id} has no live version; nothing to pause."
         self.store.transition(recipe.digest, RecipeState.PAUSED, reason=reason or f"paused by {actor}")
-        return f"{recipe_id} v{recipe.version} is paused."
+        return f"{recipe_id} v{recipe.version} is paused. To start it again: /capalis resume {recipe_id}"
 
     # -- Owner-only (slash commands) ----------------------------------------------------------------
 
@@ -357,8 +357,10 @@ class Capalis:
         targets = {str(t) for recipe in active for t in recipe.targets}
         discord = {r.trigger.source.rsplit(":", 1)[1] for r in active if r.trigger.source.startswith("discord:")}
         slack = {r.trigger.source.rsplit(":", 1)[1] for r in active if r.trigger.source.startswith("slack:")}
+        reporters = {platform: {s for r in active if r.trigger.source.startswith(f"{platform}:")
+                                for s in r.trigger.senders} for platform in ("slack", "discord")}
         return [{"area": c.area, "ok": c.ok, "detail": c.detail, "fix": c.fix}
-                for c in readiness(self.directory, targets, discord, slack)]
+                for c in readiness(self.directory, targets, discord, slack, reporters)]
 
     def drift_sweep(self) -> list[dict[str, str]]:
         """Quarantine approved versions whose pinned capabilities changed, before any trigger arrives."""
@@ -512,9 +514,15 @@ class Capalis:
     # -- Status and evidence ------------------------------------------------------------------------
 
     def describe(self, recipe: RecipeSpec) -> dict[str, Any]:
+        from .core.expressions import Const
+
         steps = []
         for step in recipe.steps:
+            origin, path = step.inputs.get("origin"), step.inputs.get("path")
+            url = (f"{origin.value}{path.value}" if step.capability_id == "capalis:http.get"
+                   and isinstance(origin, Const) and isinstance(path, Const) else None)
             steps.append({"id": step.step_id, "kind": step.kind.value, "capability": step.capability_id,
+                          "url": url,
                           "effect": step.effect.value,
                           "target": None if step.target is None else str(step.target),
                           "when": step.when is not None, "after": list(step.depends_on),

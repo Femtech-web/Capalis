@@ -24,6 +24,7 @@ Your phone, your team's other tools, and more than bug reports.
 ### Changed
 - README and docs rewritten for people who aren't engineers: a 20-second problem, a before/after table, a five-step quick start, use cases, and guides for owners and reporters.
 - Status runs the change check first, so a Recipe whose dependencies changed is never shown as live.
+- `/capalis setup` prints the exact `hermes config set` commands that let Hermes pass a Slack or Discord report channel, and its reporters, to Capalis.
 - Built for phones: `/capalis`, `/capalis runs`, alerts and the approval summary are short bullet lists in plain words, showing only the latest version of each Recipe. A quarantine says why in words ("Capalis was upgraded, so the tools this Recipe uses changed"), and the technical detail stays in the evidence.
 
 ### Fixed

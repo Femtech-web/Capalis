@@ -13,33 +13,74 @@ Capalis never does anything you haven't approved. It checks every write by readi
 ## 1. Install (once)
 
 ```bash
-hermes plugins install <owner>/<repo>#plugin
+hermes plugins install Femtech-web/Capalis#plugin
 hermes plugins enable capalis
 ```
 
-## 2. Connect the services you use (once)
+## 2. Connect Hermes to your chat apps (once)
 
-Add only the credentials you need. The easiest place is Hermes Desktop, under **Settings → Plugins → Capalis**. In a terminal, `hermes config set NAME value` works too. Never paste tokens into a chat.
+Capalis talks to people through Hermes's own connections, so connect the apps you use first:
 
-| Service | What to create | Store it as |
+```bash
+hermes gateway setup     # choose Telegram, Discord and/or Slack; it walks you through creating each bot
+hermes gateway install   # keeps Hermes running in the background, even after a restart
+```
+
+Hermes has to keep running for waiting jobs, schedules and alerts, which is why `install` matters. Then, once:
+- On **Telegram**, open your new bot and press **Start**, so it's allowed to message you.
+- In **Slack**, type `/invite @your-bot` in every channel it should read or post in.
+- In **Discord**, the invite link from `hermes gateway setup` adds the bot to your server.
+
+## 3. Give Capalis its keys
+
+The easiest place is Hermes Desktop, under **Settings → Plugins → Capalis**. Add only what you use, and never paste a token into a chat.
+
+| Field | What to enter | Stored as |
 | --- | --- | --- |
-| GitHub | A [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to your repositories, with **Issues: Read and write** | `CAPALIS_GITHUB_TOKEN` |
-| Slack | A Slack app bot token with `chat:write`, `channels:read` and `channels:history` (plus `groups:*` for private channels). Invite the bot to the channel. | `CAPALIS_SLACK_BOT_TOKEN` |
-| Discord | A Discord bot with **View Channel**, **Send Messages** and **Read Message History** in your channel, and the **Message Content** intent on | `CAPALIS_DISCORD_BOT_TOKEN` |
-| Telegram (optional, your phone) | A bot from [@BotFather](https://t.me/BotFather); send it any message once so it can write to you | `CAPALIS_TELEGRAM_BOT_TOKEN` |
+| GitHub token | A [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to your repositories, with **Issues: Read and write** | `CAPALIS_GITHUB_TOKEN` |
+| Slack bot token | The bot token Hermes uses (from step 2). It needs `chat:write`, `channels:read`, `channels:history` and `users:read`; the app `hermes gateway setup` creates has them. | `CAPALIS_SLACK_BOT_TOKEN` |
+| Discord bot token | The bot token Hermes uses. In your channel it needs **View Channel**, **Send Messages** and **Read Message History**, and the **Message Content** intent on. | `CAPALIS_DISCORD_BOT_TOKEN` |
+| Telegram bot token | The bot token Hermes uses: your phone's control panel | `CAPALIS_TELEGRAM_BOT_TOKEN` |
+| Approvers | Who may approve from chat, for example `["telegram:123456789"]` | setting |
+| Alerts channel | Where Capalis tells you when you're needed: `telegram:123456789` is best, because it's your phone. `slack:#ops` and `discord:#ops` work too. | setting |
 
-For Discord or Slack messages to *start* a Recipe, Hermes's own gateway has to be connected to that platform (`hermes gateway setup`). Then set these and restart the gateway:
+Your Telegram user id is the number you gave `hermes gateway setup`. It's also in Hermes's `TELEGRAM_ALLOWED_USERS` setting.
 
-| Reports arrive in | Set |
-| --- | --- |
-| Discord | `DISCORD_FREE_RESPONSE_CHANNELS` (your trigger channel, so messages arrive without an @mention) and `DISCORD_ALLOWED_USERS` (the people who may report) |
-| Slack | `SLACK_FREE_RESPONSE_CHANNELS` and `SLACK_ALLOWED_USERS`, in the same way |
+Without Desktop, use the terminal. Tokens go to Hermes's `.env`; settings go to its `config.yaml`:
 
-Optional: set **Alerts channel**. `telegram:<your chat id>` is best: it's your phone. `slack:#ops` and `discord:#ops` work too. Capalis posts there when something needs a person: a Recipe quarantined, a write it couldn't check, a step waiting for confirmation, a failed run. Each message comes with the exact command to type.
+```bash
+hermes config set CAPALIS_GITHUB_TOKEN <token>
+hermes config set plugins.entries.capalis.settings.approvers '["telegram:123456789"]'
+hermes config set plugins.entries.capalis.settings.alert_channel telegram:123456789
+```
 
-## 3. Check everything is ready
+The alerts channel gets one message whenever something needs a person: a Recipe ready for approval, a Recipe that stopped itself, a write it couldn't check, a step waiting for confirmation, or a failed run. Each message includes the exact command to type.
 
-In any Hermes chat, type:
+## 4. Describe what you want
+
+Ask in plain words, using names, not ids:
+
+> Set up a Capalis Recipe called bug-reports: when @ada or @sam post in Discord #bugs, open an issue in my-app, notify #engineering in Slack, and tell the reporter when the issue is closed. Use the recommended options.
+
+Hermes shows what each name resolved to (for example "#bugs is channel 1569… in Your Team"). It then builds the Recipe and runs it once in **shadow mode**: reads are real, writes are only simulated, and nothing is sent anywhere.
+
+Reports in Slack instead? Say "reports arrive in Slack #support", and replies go into each report's thread:
+
+<img src="assets/slack-thread-reply.png" alt="Slack thread: the report, and Capalis's reply with the issue link" width="480"/>
+
+Not about bugs? There's a ready-made **site watch** too:
+
+> Check https://myshop.com/checkout every 10 minutes and tell #ops in Slack if it's down.
+
+When the page doesn't answer normally, #ops hears about it, once per check, until you fix it or pause the watch (`/capalis pause <name>`):
+
+<img src="assets/slack-site-watch.png" alt="Slack #ops: the page is not up, it answered HTTP 404, checked by Capalis"/>
+
+If you want to choose between options, say "compare first". To make that your default, type `/capalis prefer compare` (or `recommend`). For example, Capalis will explain that a Slack incoming webhook is simpler but its posts can't be read back, while the Slack bot's can.
+
+## 5. Check everything is ready
+
+In the same chat, type:
 
 ```
 /capalis setup
@@ -54,26 +95,14 @@ Capalis setup
   FIX  Slack: #engineering: the Capalis bot is not in this channel yet
        -> in Slack, open #engineering and type /invite @ followed by the bot's name
   OK   Discord: can see #bugs
+  NOTE Hermes gateway: Discord messages in #bugs (1569…) reach Capalis only if the gateway listens there and allows the reporters
+       -> run: hermes config set DISCORD_FREE_RESPONSE_CHANNELS 1569… && hermes config set DISCORD_ALLOWED_USERS 1145… && hermes gateway restart
 1 thing(s) to fix.
 ```
 
-## 4. Describe what you want
+**Why the NOTE matters.** Hermes ignores channel messages that don't @mention its bot, and messages from people it doesn't know, before any plugin sees them. So, once per report channel, tell Hermes to listen there and who may report. `/capalis setup` fills in the ids for you; if a setting already lists ids, keep them, separated by commas. Capalis can't change these settings itself: they belong to Hermes, and which channels your bot reads is your decision. For Slack, the names are `SLACK_FREE_RESPONSE_CHANNELS` and `SLACK_ALLOWED_USERS`.
 
-Ask in plain words, using names, not ids:
-
-> Set up a Capalis Recipe called bug-reports: when @ada or @sam post in Discord #bugs, open an issue in my-app, notify #engineering in Slack, and tell the reporter when the issue is closed. Use the recommended options.
-
-Hermes shows what each name resolved to (for example "#bugs is channel 1569… in Your Team"). It then builds the Recipe and runs it once in **shadow mode**: reads are real, writes are only simulated, and nothing is sent anywhere.
-
-Reports in Slack instead? Say "reports arrive in Slack #support", and replies go into each report's thread.
-
-Not about bugs? There's a ready-made **site watch** too:
-
-> Check https://myshop.com/checkout every 10 minutes and tell #ops in Slack if it's down.
-
-If you want to choose between options, say "compare first". To make that your default, type `/capalis prefer compare` (or `recommend`). For example, Capalis will explain that a Slack incoming webhook is simpler but its posts can't be read back, while the Slack bot's can.
-
-## 5. Approve
+## 6. Approve
 
 ```
 /capalis approve bug-reports
@@ -107,9 +136,11 @@ Send `/capalis approve` to the bot. Telegram numbers the buttons, and the list a
 
 > ✅ Approved bug-reports v2 for 30 days.
 > When @ada posts in #bugs, it now runs on its own.
-> It can only act in: #bugs, #engineering, my-app. Your Telegram user id is the number Hermes shows for you; it's also in your Hermes `TELEGRAM_ALLOWED_USERS` setting.
+> It can only act in: #bugs, #engineering, my-app.
 
-## 6. Use it
+Your Telegram user id is the number Hermes shows for you; it's also in your Hermes `TELEGRAM_ALLOWED_USERS` setting.
+
+## 7. Use it
 
 Ask a teammate to post a bug in #bugs. Within seconds:
 - the issue appears,
@@ -159,6 +190,7 @@ By default, only someone at the computer running Hermes (CLI, TUI or Desktop) ca
 | What you see | What to do |
 | --- | --- |
 | Nothing happens when someone posts in #bugs | Run `/capalis setup`. Check that the gateway is connected to Discord, that #bugs is in `DISCORD_FREE_RESPONSE_CHANNELS`, that the person is in `DISCORD_ALLOWED_USERS` and in the Recipe's reporter list, and that the Recipe is **live** (`/capalis`). |
+| Nothing happens when someone posts in Slack | Same checks with the Slack names: `SLACK_FREE_RESPONSE_CHANNELS`, `SLACK_ALLOWED_USERS`, and the bot invited to the channel. If Hermes's gateway log says "Early reject of unauthorized user", that person isn't in `SLACK_ALLOWED_USERS` yet. Messages sent before you fixed it aren't replayed, so post again. |
 | "could not find @name" | They haven't posted in that channel yet. Ask them to post once, or give their user id. |
 | A Recipe is quarantined | `/capalis` shows the reason. Ask Hermes to rebuild the Recipe, then approve the new version. |
 | A run is unverified | `/capalis evidence <run>` shows which check failed and why. The write itself may still have happened. |

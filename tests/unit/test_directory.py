@@ -102,13 +102,16 @@ def test_setup_report_names_each_gap_and_its_fix() -> None:
                    "conversations.info": ok({"ok": True, "channel": {"id": "C0CFU6F0MNK", "name": "engineering",
                                                                      "is_member": False}})},
                   secrets={GITHUB_TOKEN: "t", SLACK_BOT_TOKEN: "t"})
-    checks = readiness(d, {"slack.channel:C0CFU6F0MNK"}, {"1569488960479297590"})
+    checks = readiness(d, {"slack.channel:C0CFU6F0MNK"}, {"1569488960479297590"},
+                       reporters={"discord": {"1145236794"}})
     text = setup([asdict(c) for c in checks])
     assert "OK   GitHub: connected as oluwafemi-akolade" in text
     assert "OK   Slack: connected as hermes in Capalis Test" in text
     assert "FIX  Discord: CAPALIS_DISCORD_BOT_TOKEN is not set" in text
     assert "FIX  Slack: #engineering: the Capalis bot is not in this channel yet" in text
-    assert "/invite @" in text and "DISCORD_FREE_RESPONSE_CHANNELS" in text
+    assert "/invite @" in text
+    assert ("hermes config set DISCORD_FREE_RESPONSE_CHANNELS 1569488960479297590 && hermes config set "
+            "DISCORD_ALLOWED_USERS 1145236794 && hermes gateway restart") in text
     assert "2 thing(s) to fix." in text
 
 

@@ -36,6 +36,8 @@ On 2026-11-10 the owner ran the full loop on their own Discord, GitHub, Slack an
 | `5d7da41e` | ... then the owner closed the issue, and Capalis replied under the report | 3 of 3 V1 met, verified |
 | `75415396` | A changed GitHub capability quarantined the old version; the model rebuilt it from names; issue #5, Slack, "tracked as #5", closed, "fixed and closed" | 4 of 4 V1 met, verified |
 | `57f7bd53` | Approved from a phone: the Telegram approval request arrived 9 s after the practice run, the owner (`telegram:<id>`) approved with a button; issue #6, Slack, "tracked as #6", closed, "fixed and closed" | 4 of 4 V1 met, verified |
+| `3d1687c0` | Slack intake: a post in #support -> issue #7, #engineering notice, reply in the report's thread | 3 of 3 V1 met, verified |
+| `7a2fa863` | Scheduled site watch (every 2 minutes): the page answered 404, so #ops was told; the owner then paused it from Telegram | 1 of 1 V1 met, verified |
 
 Screenshots: [docs/assets](docs/assets).
 

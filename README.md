@@ -52,55 +52,82 @@ A teammate posts a bug in Discord. Capalis opens the issue, tells the team in Sl
 
 ## Quick start
 
-You need Hermes Agent, plus the accounts you want to connect (GitHub, Slack, Discord, Telegram: any of them).
+From nothing to a job that runs on its own, in seven steps. Steps 1 to 3 happen once, on the computer that runs Hermes. After that you can do everything from your phone.
 
-**1. Install**
+| Who | Does what | Where |
+| --- | --- | --- |
+| **You, once** | Install Capalis and connect your apps (steps 1–3) | Terminal, or Hermes Desktop |
+| **You, for each job** | Describe it, check it, approve it (steps 4–6) | A Hermes chat, then Telegram |
+| **Your teammates** | Post as they already do. They don't install anything. | Discord or Slack |
+| **Capalis** | Runs the job, checks every write, and messages you only when you're needed | In the background |
+
+**1. Install Capalis** (terminal)
 
 ```bash
 hermes plugins install Femtech-web/Capalis#plugin
 hermes plugins enable capalis
 ```
 
-**2. Connect your accounts.** Add the tokens in Hermes Desktop (**Settings → Plugins → Capalis**), then type:
+**2. Connect Hermes to your chat apps** (terminal)
+
+```bash
+hermes gateway setup     # choose Telegram, Discord and/or Slack; it walks you through creating each bot
+hermes gateway install   # keeps Hermes running in the background, even after a restart
+```
+
+Then, once:
+- On **Telegram**, open your new bot and press **Start**, so it's allowed to message you.
+- In **Slack**, type `/invite @your-bot` in every channel it should read or post in.
+
+**3. Give Capalis its keys** (Hermes Desktop → **Settings → Plugins → Capalis**)
+
+| Field | What to enter |
+| --- | --- |
+| GitHub token | A new [fine-grained token](https://github.com/settings/personal-access-tokens/new) for your repository, with **Issues: Read and write** |
+| Slack, Discord and Telegram bot tokens | The same tokens you gave Hermes in step 2. One bot per app is enough. |
+| Approvers | `["telegram:<your Telegram user id>"]`, so you can approve from your phone |
+| Alerts channel | `telegram:<your Telegram user id>` |
+
+Your Telegram user id is the number you gave `hermes gateway setup`. Without Desktop, `hermes config set` sets each field ([owner's guide](docs/USER_GUIDE.md#3-give-capalis-its-keys)). Never paste a token into a chat.
+
+**4. Describe the job** (any Hermes chat: the terminal or Desktop)
+
+> Set up a Capalis Recipe called bug-reports: when Ada posts a bug in Discord #bugs, open an issue in my-app, tell #engineering in Slack, and keep the reporter updated until it's closed. Use recommended.
+
+Capalis finds #bugs, #engineering and my-app by name and builds the Recipe. Then it does a practice run that reads for real but sends nothing.
+
+**5. Check it's ready** (same chat)
 
 ```text
 /capalis setup
 ```
 
-It answers in plain words, with the exact fix for anything missing:
+Every line says **OK**, or **FIX** with the exact fix. For the channel where reports arrive, it also prints a Hermes command to run once. Hermes ignores messages there until you allow them:
 
 ```text
 Capalis setup
   OK   GitHub: connected as your-name
-  FIX  Slack: #engineering: the Capalis bot is not in this channel yet
-       -> in Slack, open #engineering and type /invite @ followed by the bot's name
+  OK   Slack: connected as hermes in Your Team
   OK   Discord: can see #bugs
-1 thing(s) to fix.
+  NOTE Hermes gateway: Discord messages in #bugs (1569…) reach Capalis only if the gateway listens there and allows the reporters
+       -> run: hermes config set DISCORD_FREE_RESPONSE_CHANNELS 1569… && hermes config set DISCORD_ALLOWED_USERS 1145… && hermes gateway restart
+Everything needed is ready.
 ```
 
-**3. Say what you want.** In any Hermes chat, paste and edit:
+**6. Approve it** (Telegram)
 
-> Set up a Capalis Recipe: when someone posts a bug in Discord #bugs, open an issue in my-app, tell #engineering in Slack, and keep the reporter updated. Use recommended.
+A message arrives: **🔔 Ready for your approval: bug-reports v1**, listing exactly what it will do and where. Send `/capalis approve` and tap **1** (Approve). The approval covers only that version; any change needs a new one.
 
-Capalis finds #bugs, #engineering and my-app by name, builds the Recipe, and does a practice run that sends nothing.
+**7. That's it.** When Ada posts a bug in #bugs, the issue, the Slack message and the reply to Ada appear within seconds, and each one is verified. You manage everything from the same Telegram chat:
 
-**4. Approve it.**
-
-```text
-/capalis approve
-```
-
-You get a short list of exactly what it will do and where, with **Approve** and **Not now** buttons. You can do this from your phone in Telegram too.
-
-**5. That's it.** Post a bug in #bugs and watch the issue, the Slack message and the reply appear, each one verified.
-
-| Later | Type |
+| You want to | Send |
 | --- | --- |
-| What's happening? | `/capalis` |
-| Show me the proof for a run | `/capalis evidence <run>` |
-| Stop everything, now | `/capalis pause` |
+| See what's happening | `/capalis` |
+| See recent runs | `/capalis runs` |
+| See the proof for a run | `/capalis evidence <run>` |
+| Pause one job, or everything | `/capalis pause bug-reports` · `/capalis pause` |
 
-Full walkthrough, including Slack intake, schedules and team approvals: **[Owner's guide](docs/USER_GUIDE.md)**. Teammates who only report bugs need nothing at all: **[their one-page guide](docs/REPORTERS.md)**.
+Reports in Slack instead? Say "reports arrive in Slack #support", and replies go into each report's thread. Need a site check? "Check https://myshop.com/checkout every 10 minutes and tell #ops if it's down." The [owner's guide](docs/USER_GUIDE.md) covers schedules, team approvals and troubleshooting. Teammates who only report bugs need [one page](docs/REPORTERS.md).
 
 ## Your phone is the control panel
 
@@ -142,7 +169,7 @@ Anyone whose work runs through chat and who is tired of things falling through t
 ## For judges
 
 1. **Claims:** [JUDGES.md](JUDGES.md) lists every claim with the tests that prove it, regenerated from a real run. All of them hold.
-2. **Live proof:** [Proof](#proof-what-ran-for-real) lists five verified runs on real GitHub, Slack, Discord and Telegram accounts.
+2. **Live proof:** [Proof](#proof-what-ran-for-real) lists seven verified runs on real GitHub, Slack, Discord and Telegram accounts.
 3. **Run the suite:** `uv sync --group dev && make check` runs lint, strict typing and 304 tests in about 5 seconds, with no accounts needed.
 4. **Try to break it:** [`tests/integration/test_runner.py`](tests/integration/test_runner.py) crashes mid-write, fakes a success, revokes approval mid-run, changes a dependency and feeds hostile text.
 5. **Read how it's built:**
@@ -162,6 +189,8 @@ These ran on the owner's own accounts on 2026-11-10, driven through a real Herme
 | `5d7da41e` | … then the owner closed the issue, and Capalis replied under the report | 3 of 3 met, **verified** |
 | `75415396` | A change to the GitHub capability quarantined the old version by itself; the model rebuilt it from names only; issue #5 → Slack → "tracked as #5" → closed → "fixed and closed" | 4 of 4 met, **verified** |
 | `57f7bd53` | **Approved from a phone.** The Telegram approval request arrived 9 seconds after the practice run; the owner approved with a button; then issue #6 → Slack → "tracked as #6" → closed → "fixed and closed" | 4 of 4 met, **verified** |
+| `3d1687c0` | **Reports from Slack.** A post in Slack #support became issue #7; #engineering was told; the reply landed in the report's thread | 3 of 3 met, **verified** |
+| `7a2fa863` | **Site watch on a schedule.** Every 2 minutes it checked a page; the page answered 404, so #ops was told; then the owner paused it from Telegram | 1 of 1 met, **verified** |
 
 ## How it works
 
@@ -245,13 +274,14 @@ Change the contract and it needs approval again. Revoke it, and every Recipe usi
 | --- | --- | --- |
 | A Hermes v0.23.0 plugin that passes `hermes plugins validate` and `doctor` | Practice (shadow) runs simulate writes; that's their purpose | Writes through other plugins' tools (read-only contracts only) |
 | Real Hermes chats building, comparing, compiling and practicing Recipes | In-memory services in `tests/fakes.py`, used only to inject failures real services can't produce on demand | A dashboard page |
-| GitHub, Slack and Discord on real accounts: the full report-to-reply loop and a live drift quarantine; Telegram alerts and phone approval | Scripted HTTP replies in adapter tests | Telegram as a place reports come *from* |
+| GitHub, Slack and Discord on real accounts: the full report-to-reply loop, a live drift quarantine, Slack intake with threaded replies, and a scheduled site watch; Telegram alerts and phone approval | Scripted HTTP replies in adapter tests | Telegram as a place reports come *from* |
 
 ## Limits
 
 - Writes go only through Capalis's reviewed connections: GitHub Issues, Slack, Discord and Telegram, plus HTTPS reads. Slack webhooks and Telegram can't be read back, so their posts are labeled unverifiable.
 - Waits and schedules check every 30 seconds or more, and need the Hermes gateway running.
-- Slack-channel intake, schedules and contracts for other tools pass their tests, but haven't run on the owner's accounts yet.
+- Contracts for other Hermes tools pass their tests, but haven't run on the owner's accounts yet.
+- For reports from Slack or Discord, Hermes itself must listen in that channel and allow the reporters. That's one setting each, set once by the owner. `/capalis setup` prints the exact commands; a plugin isn't allowed to change Hermes's settings.
 - The record's hash chain detects edits; it can't stop someone who rewrites the whole database.
 
 ## Project layout and development

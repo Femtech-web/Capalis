@@ -240,7 +240,7 @@ class Check:
 
 
 def readiness(directory: Directory, targets: set[str], discord_triggers: set[str],
-              slack_triggers: Iterable[str] = ()) -> list[Check]:
+              slack_triggers: Iterable[str] = (), reporters: Mapping[str, Iterable[str]] | None = None) -> list[Check]:
     """Plain-language setup check: credentials, identities, and access to every target in use."""
     checks: list[Check] = []
     settings_fix = "add it in Hermes Desktop (Settings > Plugins > Capalis) or run: hermes config set {name} <value>"
@@ -290,22 +290,22 @@ def readiness(directory: Directory, targets: set[str], discord_triggers: set[str
         except (ResolveError, PermissionError) as exc:
             checks.append(Check(kind.split(".")[0].title(), False, f"{value}: {exc}",
                                 "give the Capalis bot access to it, or pick another target"))
-    for channel in sorted(slack_triggers):
-        try:
-            shown = f"{directory.slack_channel(channel).label} ({channel})"
-        except (ResolveError, PermissionError):
-            shown = channel
-        checks.append(Check("Hermes gateway", None,
-                            f"Slack messages in {shown} reach Capalis only if the gateway lists it",
-                            f"set SLACK_FREE_RESPONSE_CHANNELS to include {channel} and add reporters to "
-                            "SLACK_ALLOWED_USERS, then restart the gateway"))
-    for channel in sorted(discord_triggers):
-        try:
-            shown = f"{directory.discord_channel(channel).label} ({channel})"
-        except (ResolveError, PermissionError):
-            shown = channel
-        checks.append(Check("Hermes gateway", None,
-                            f"Discord messages in {shown} reach Capalis only if the gateway lists it",
-                            f"set DISCORD_FREE_RESPONSE_CHANNELS to include {channel} and add reporters to "
-                            "DISCORD_ALLOWED_USERS, then restart the gateway"))
+    # Hermes drops channel messages that don't @mention the bot, and messages from people it doesn't
+    # allow, before any plugin sees them; only the owner can change that, in the gateway's settings.
+    for platform, channels, lookup in (("Slack", slack_triggers, directory.slack_channel),
+                                       ("Discord", discord_triggers, directory.discord_channel)):
+        people = ",".join(sorted((reporters or {}).get(platform.lower(), ()))) or "<their user ids>"
+        for channel in sorted(channels):
+            try:
+                shown = f"{lookup(channel).label} ({channel})"
+            except (ResolveError, PermissionError):
+                shown = channel
+            env = platform.upper()
+            checks.append(Check(
+                "Hermes gateway", None,
+                f"{platform} messages in {shown} reach Capalis only if the gateway listens there and allows "
+                "the reporters",
+                f"run: hermes config set {env}_FREE_RESPONSE_CHANNELS {channel} && hermes config set "
+                f"{env}_ALLOWED_USERS {people} && hermes gateway restart (keep any ids already there, "
+                "comma-separated)"))
     return checks
