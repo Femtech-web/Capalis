@@ -141,7 +141,7 @@ class Runner:
         decision = authorize_run(recipe, TriggerEvent(source, sender, dedupe_value), ctx)
         if not decision.allowed:
             if decision.code == "drift" and mode is Mode.LIVE:
-                self._quarantine(recipe, drift.summary())
+                self._quarantine(recipe, drift.plain(), detail=drift.summary())
             return reject(decision.code, decision.detail)
         if dedupe_value is None:
             return reject("no_dedupe_value", "the trigger has no value to deduplicate on")
@@ -626,9 +626,9 @@ class Runner:
         except (ConflictError, IllegalTransition) as exc:
             raise _Abandon from exc
 
-    def _quarantine(self, recipe: RecipeSpec, reason: str) -> None:
+    def _quarantine(self, recipe: RecipeSpec, reason: str, detail: str = "") -> None:
         with contextlib.suppress(IllegalTransition, ConflictError):
-            self.store.transition(recipe.digest, RecipeState.QUARANTINED, reason=reason)
+            self.store.transition(recipe.digest, RecipeState.QUARANTINED, reason=reason, detail=detail)
 
     def _finish(self, recipe: RecipeSpec, run: Any) -> None:
         attempts = self.store.latest_attempts(run.run_id)

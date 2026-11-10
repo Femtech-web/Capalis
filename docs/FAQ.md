@@ -24,6 +24,9 @@ Yes: "every weekday at 9" or "every 10 minutes", in UTC. Each slot runs once, ev
 **How do I know when something needs me?**
 Set the Alerts channel (for example `slack:#ops`). Capalis posts there when a Recipe is quarantined, a write couldn't be checked, a step waits for confirmation, or a run fails. Each post comes with the exact command to type.
 
+**Does it work with Telegram?**
+Yes, as your control panel. Capalis sends approval requests and alerts to your Telegram, and you approve with a button there. Telegram's Bot API can't read a message back, so a Telegram post is never counted as proof, only as a message to you.
+
 **Where is my data?**
 In one SQLite file under Hermes's plugin data folder. Payloads are redacted before they're stored. Nothing is sent anywhere except the GitHub, Slack and Discord calls your Recipes make, and there is no telemetry.
 

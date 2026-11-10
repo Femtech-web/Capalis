@@ -11,17 +11,17 @@ description: >-
   that exact version (/capalis approve, with a button). It verifies every write by independent read-back,
   never blindly retries an uncertain write, and quarantines the Recipe when a dependency changes. Other
   Hermes tools can join as read steps under owner-tested, owner-approved contracts. Disclosure: calls
-  api.github.com, slack.com and discord.com (and a Slack webhook if configured) with the user's tokens, and
+  api.github.com, slack.com, discord.com and api.telegram.org (and a Slack webhook if configured) with the user's tokens, and
   credential-free HTTPS GETs to origins an approved Recipe names; calls other Hermes tools via
   ctx.dispatch_tool only under approved read-only contracts; stores Recipes, approvals and redacted run records
   in plugin-data/capalis/ (evidence exports in plugin-data/capalis/exports/); consumes chat messages in channels
-  a Recipe listens to (pre_gateway_dispatch) and posts owner alerts to a channel the owner sets; runs a daemon
+  a Recipe listens to (pre_gateway_dispatch) and sends owner alerts and approval requests to a channel the owner sets (Telegram, Slack or Discord); runs a daemon
   thread in the gateway every 30 s. No shell commands, subprocesses, telemetry or self-updating.
 maintainer: Femtech-web
 tier: community
 category: automation
 docs_url: https://github.com/Femtech-web/Capalis#readme
-version: "0.1.0"
+version: "0.2.0"
 platforms: []
 capabilities:
   provides_tools: [capalis_status, capalis_setup, capalis_capabilities, capalis_recipe, capalis_run, capalis_contract, capalis_pause]

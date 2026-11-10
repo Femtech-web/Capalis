@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -22,23 +23,55 @@ def _table(rows: Sequence[Sequence[str]]) -> list[str]:
             for row in rows]
 
 
+_RECIPE_WORDS = {"live": "live", "paused": "paused", "awaiting_approval": "waiting for your approval",
+                 "shadow_qualified": "practised, not sent for approval yet", "quarantined": "stopped itself",
+                 "retired": "retired"}
+_RUN_WORDS = {"verified": "done, every write checked", "unverified": "done, but not every write could be checked",
+              "failed": "did not finish", "waiting": "waiting", "running": "running", "queued": "starting",
+              "cancelled": "cancelled", "needs_reconciliation": "needs you"}
+_STEP_WORDS = {"unknown_effect": "may or may not have been written", "dispatched": "sent, checking it landed",
+               "intent_recorded": "about to be sent"}
+_PLATFORMS = {"github": "GitHub", "slack": "Slack", "discord": "Discord", "telegram": "Telegram", "http": "web checks"}
+
+
+def _clip(text: str, limit: int = 90) -> str:
+    return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
 def status(report: Mapping[str, Any]) -> str:
-    lines = [f"Capalis {report.get('version', '')}" + ("  (ALL PAUSED)" if report["globally_paused"] else "")]
-    lines.append("Recipes:")
-    lines += _table([[r["recipe_id"], f"v{r['version']}", r["state"].replace("_", " "), r["short_digest"]]
-                     for r in report["recipes"]]) or ["  none yet"]
-    for q in report.get("quarantined", []):
-        lines.append(f"  quarantined {q['recipe_id']} v{q['version']}: {q['reason']}")
-    lines.append("Recent runs:")
-    lines += _table([[r["run_id"][:8], r["mode"], r["state"].replace("_", " "), _when(r["started_at"]),
-                      r["detail"]] for r in report["recent_runs"]]) or ["  none yet"]
-    attention = report["needs_attention"]
-    lines.append("Needs your attention: " + ("nothing" if not attention else ""))
-    lines += [f"  run {a['run_id'][:8]} step {a['step']}: {a['state'].replace('_', ' ')} ({a['detail']})"
-              for a in attention]
-    ready = [cid.split(":", 1)[1] for cid, state in report["capabilities"].items() if state == "available"]
-    missing = [cid.split(":", 1)[1] for cid, state in report["capabilities"].items() if state != "available"]
-    lines.append(f"Capabilities ready: {len(ready)}" + (f"; needs setup: {', '.join(missing)}" if missing else ""))
+    """Short lines and bullets, so it reads the same on a phone as in a terminal."""
+    lines = [f"Capalis {report.get('version', '')}".rstrip()]
+    if report["globally_paused"]:
+        lines.append("Everything is paused. Send /capalis resume to continue.")
+    lines += ["", "Recipes"]
+    for r in report["recipes"]:
+        state = _RECIPE_WORDS.get(r["state"], r["state"].replace("_", " "))
+        lines.append(f"• {r['recipe_id']} v{r['version']}: {state}")
+        if r["state"] == "awaiting_approval":
+            lines.append(f"  → /capalis approve {r['recipe_id']}")
+        elif r["state"] == "quarantined":
+            lines.append(f"  Why: {_clip(r.get('reason') or 'something it depends on changed')}")
+            lines.append(f"  → ask Hermes to rebuild {r['recipe_id']}, then approve it")
+        elif r["state"] == "paused":
+            lines.append(f"  → /capalis resume {r['recipe_id']}")
+    if not report["recipes"]:
+        lines.append("• none yet. Ask Hermes to set one up, or send /capalis help")
+    lines += ["", "Recent runs"]
+    for r in report["recent_runs"][:5]:
+        lines += _run_lines(r)
+    if not report["recent_runs"]:
+        lines.append("• none yet")
+    lines += ["", "Needs you"]
+    lines += [f"• run {a['run_id'][:8]}, step {a['step']}: "
+              f"{_STEP_WORDS.get(a['state'], a['state'].replace('_', ' '))}" for a in report["needs_attention"]]
+    if not report["needs_attention"]:
+        lines.append("• nothing")
+    caps = report["capabilities"]
+    missing = sorted({_PLATFORMS.get(cid.split(":", 1)[1].split(".")[0], cid.split(":", 1)[1])
+                      for cid, state in caps.items() if state != "available"})
+    ready = sum(1 for state in caps.values() if state == "available")
+    lines += ["", f"Tools ready: {ready} of {len(caps)}"
+              + (f" (needs setup: {', '.join(missing)}. Send /capalis setup)" if missing else "")]
     lines.append("Event log: " + ("intact" if report["event_log_intact"] else "TAMPERING DETECTED"))
     return "\n".join(lines)
 
@@ -95,11 +128,21 @@ def recipe(desc: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _run_lines(r: Mapping[str, Any]) -> list[str]:
+    practice = r["mode"] == "shadow"
+    words = ("practice run, nothing was sent" if practice and r["state"] in ("verified", "unverified")
+             else _RUN_WORDS.get(r["state"], r["state"].replace("_", " ")) + (" (practice)" if practice else ""))
+    lines = [f"• {_when(r['started_at'])} {r['recipe_id']}: {words} · {r['run_id'][:8]}"]
+    if r["state"] in ("failed", "needs_reconciliation", "waiting") and r["detail"]:
+        lines.append(f"  {_clip(r['detail'])}")
+    return lines
+
+
 def runs(items: Sequence[Mapping[str, Any]]) -> str:
     if not items:
         return "No runs yet."
-    return "\n".join(_table([[r["run_id"][:8], r["recipe_id"], r["mode"], r["state"].replace("_", " "),
-                              _when(r["started_at"]), r["detail"]] for r in items]))
+    lines = [line for r in items for line in _run_lines(r)]
+    return "\n".join([*lines, "", f"Every step of a run: /capalis evidence {items[0]['run_id'][:8]}"])
 
 
 def _output_summary(output: Any) -> str:
@@ -131,32 +174,65 @@ _WRITE_WORDS = {"capalis:github.issue.create": "open an issue in", "capalis:slac
                 "capalis:slack.webhook.post": "post (unverifiable) in", "capalis:discord.message.post": "post in"}
 
 
+_NOUNS = {"github.issue": "the issue", "slack.message": "the Slack message",
+          "discord.message": "the Discord message", "http.get": "the page"}
+
+
+def _label(value: str | None, names: Mapping[str, str], kind: str | None = None) -> str:
+    """'#engineering' when a display name is known, else the id."""
+    full = named(value, names, kind)
+    return full.split(" (")[0] if " (" in full else full
+
+
+def _trigger_text(desc: Mapping[str, Any]) -> str:
+    trigger, names = desc["trigger"], desc.get("names", {})
+    if trigger["kind"] == "schedule":
+        return f"On the schedule {trigger.get('schedule')} (UTC)"
+    who = ", ".join(_label(s, names, "discord.user") for s in trigger["senders"]) or "the owner"
+    return f"When {who} posts in {_label(trigger['source'], names)}"
+
+
+def approved(desc: Mapping[str, Any], days: int) -> str:
+    names = desc.get("names", {})
+    places = sorted({_label(t, names) for t in desc["targets"]})
+    return "\n".join([f"✅ Approved {desc['recipe_id']} v{desc['version']} for {days} days.", "",
+                      f"{_trigger_text(desc)}, it now runs on its own.",
+                      f"It can only act in: {', '.join(places)}.", "",
+                      "Stop it any time: /capalis pause"])
+
+
 def plain(desc: Mapping[str, Any]) -> str:
-    """One paragraph a non-technical approver can check: who triggers it, and what it will do where."""
+    """What a non-technical approver checks: who triggers it, then one line per thing it will do, and where."""
     names = desc.get("names", {})
 
-    def short(value: str | None, kind: str | None = None) -> str:
-        full = named(value, names, kind)
-        return full.split(" (")[0] if " (" in full else full
+    nouns = {step["id"]: next((noun for prefix, noun in _NOUNS.items()
+                               if (step.get("capability") or "").split(":", 1)[-1].startswith(prefix)), step["id"])
+             for step in desc["steps"]}
 
-    trigger = desc["trigger"]
-    who = ", ".join(short(s, "discord.user") for s in trigger["senders"]) or "the owner"
-    actions = []
+    def condition(text: str) -> str:
+        def words(match: re.Match[str]) -> str:
+            noun, field = nouns.get(match.group(1), match.group(1)), match.group(2)
+            return f"{noun} is" if field == "state" else f"{noun}'s {field.replace('_', ' ')} is"
+        return re.sub(r"\b(\w+)\.(\w+) is", words, text.replace("steps.", "").replace(" equals ", " is "))
+
+    planned = []
     for step in desc["steps"]:
         if step.get("kind") == "wait":
-            actions.append(f"wait until {step['wait'].split(', checking')[0].replace('steps.', '')}")
+            planned.append((step, f"Wait until {condition(step['wait'].split(', checking')[0])}"))
         elif step["effect"] != "read":
             verb = _WRITE_WORDS.get(step["capability"], f"{step['effect'].replace('_', ' ')} on")
-            actions.append(f"{verb} {short(step['target'])}" + (" (if needed)" if step["when"] else ""))
-    when = (f"On the schedule {trigger.get('schedule')}" if trigger["kind"] == "schedule"
-            else f"When {who} posts in {short(trigger['source'])}")
-    text = (f"{when}, it will " + ", then ".join(actions)
-            + ". Every write is read back independently before it counts as done.")
+            planned.append((step, f"{verb[0].upper()}{verb[1:]} {_label(step['target'], names)}"))
+    repeated = {text for _, text in planned if sum(1 for _, other in planned if other == text) > 1}
+    actions = [text + (f": {step['id'].replace('_', ' ')}" if text in repeated else "")
+               + (" (only if needed)" if step["when"] else "") for step, text in planned]
+    lines = [f"{_trigger_text(desc)}, it will:", *(f"• {action}" for action in actions), "",
+             "Every write is read back before it counts as done."]
     changes = desc.get("changes_since_previous")
     if changes:
-        shown = "; ".join(named_text(c, names) for c in changes[:4]) + ("; ..." if len(changes) > 4 else "")
-        text += f" Changed since v{desc['version'] - 1}: {shown}."
-    return text
+        lines += ["", f"Changed since v{desc['version'] - 1}:",
+                  *(f"• {named_text(change, names)}" for change in changes[:3])]
+        lines += [f"• and {len(changes) - 3} more (/capalis show {desc['recipe_id']})"] if len(changes) > 3 else []
+    return "\n".join(lines)
 
 
 def setup(checks: Sequence[Mapping[str, Any]]) -> str:

@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from capalis.core.drift import DriftKind, detect_drift
+from capalis.core.drift import DriftChange, DriftKind, DriftReport, detect_drift
 from capalis.core.model import Availability, EvidenceLevel, OutcomeContract, RecipeSpec, Target, Trust
 from capalis.core.verification import (
     ContractStatus,
@@ -124,3 +124,18 @@ def test_missing_capability_is_drift(recipe: RecipeSpec) -> None:
     del caps["capalis:github.issue.get"]
     report = detect_drift(recipe, caps)
     assert [(c.capability_id, c.kind) for c in report.changes] == [("capalis:github.issue.get", DriftKind.MISSING)]
+
+
+def test_drift_reasons_read_in_plain_words() -> None:
+    upgrade = DriftReport("sha256:r", (
+        DriftChange("capalis:github.issue.create", DriftKind.VERSION_CHANGED, "0.1.0", "0.2.0"),
+        DriftChange("capalis:slack.message.post", DriftKind.SCHEMA_CHANGED, "sha256:a", "sha256:b"),
+        DriftChange("capalis:slack.message.post", DriftKind.VERSION_CHANGED, "0.1.0", "0.2.0")))
+    assert upgrade.plain() == "Capalis was upgraded (0.1.0 → 0.2.0), so the tools this Recipe uses changed"
+    assert "sha256" in upgrade.summary(), "the technical detail stays available for evidence"
+
+    mixed = DriftReport("sha256:r", (
+        DriftChange("hermes:read_file", DriftKind.MISSING, "1", "absent"),
+        DriftChange("capalis:slack.message.post", DriftKind.UNAVAILABLE, "available", "needs_auth")))
+    assert mixed.plain() == ("read_file is no longer available; slack.message.post can't be used right now "
+                             "(a token or permission may be missing)")

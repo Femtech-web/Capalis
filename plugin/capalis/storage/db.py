@@ -319,7 +319,8 @@ class Store:
         rows = self._read("SELECT recipe_id, version, digest, state FROM recipes ORDER BY recipe_id, version")
         return [(r[0], r[1], r[2], RecipeState(r[3])) for r in rows]
 
-    def transition(self, digest: str, target: RecipeState, *, reason: str = "") -> RecipeState:
+    def transition(self, digest: str, target: RecipeState, *, reason: str = "", detail: str = "") -> RecipeState:
+        """``reason`` is what the owner reads; ``detail`` is kept only in the event log, for evidence."""
         with self._tx() as tx:
             row = tx.execute("SELECT state FROM recipes WHERE digest = ?", (digest,)).fetchone()
             if row is None:
@@ -331,8 +332,10 @@ class Store:
                                  (target.value, reason, self.clock(), digest, current.value))
             if updated.rowcount != 1:
                 raise ConflictError(f"Recipe {digest} changed state concurrently")
-            self._event(tx, "recipe.state", {"digest": digest, "from": current.value, "to": target.value,
-                                             "reason": reason})
+            payload = {"digest": digest, "from": current.value, "to": target.value, "reason": reason}
+            if detail:
+                payload["detail"] = detail
+            self._event(tx, "recipe.state", payload)
         return target
 
     # -- Grants -------------------------------------------------------------------------------------
@@ -385,6 +388,22 @@ class Store:
         with self._tx() as tx:
             tx.execute("INSERT INTO controls VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
                        "updated_at = excluded.updated_at", (key, value, self.clock()))
+
+    def claim_control(self, key: str, ttl_s: int) -> bool:
+        """A short lease across processes (the CLI and the gateway share this file); a crashed holder's
+        lease lapses after ``ttl_s``."""
+        now = self.clock()
+        with self._tx() as tx:
+            row = tx.execute("SELECT updated_at FROM controls WHERE key = ?", (key,)).fetchone()
+            if row is not None and now - int(row[0]) < ttl_s:
+                return False
+            tx.execute("INSERT INTO controls VALUES (?, 'held', ?) ON CONFLICT(key) DO UPDATE SET "
+                       "updated_at = excluded.updated_at", (key, now))
+        return True
+
+    def release_control(self, key: str) -> None:
+        with self._tx() as tx:
+            tx.execute("DELETE FROM controls WHERE key = ?", (key,))
 
     def last_event_seq(self) -> int:
         row = self._one("SELECT MAX(seq) FROM events")

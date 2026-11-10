@@ -35,6 +35,32 @@ class DriftReport:
         # D-015: every pin change is material until a finer, tested policy exists.
         return bool(self.changes)
 
+    def plain(self) -> str:
+        """The reason in words an owner understands; ``summary`` keeps the technical detail for evidence."""
+        if not self.changes:
+            return "nothing it depends on changed"
+        versions = sorted({(c.before, c.after) for c in self.changes if c.kind is DriftKind.VERSION_CHANGED})
+        if (len(versions) == 1 and all(c.capability_id.startswith("capalis:") for c in self.changes)
+                and {c.kind for c in self.changes} <= {DriftKind.VERSION_CHANGED, DriftKind.SCHEMA_CHANGED}):
+            before, after = versions[0]
+            return f"Capalis was upgraded ({before} → {after}), so the tools this Recipe uses changed"
+
+        def names(kind: DriftKind) -> str:
+            found = sorted({c.capability_id.split(":", 1)[-1] for c in self.changes if c.kind is kind})
+            return ", ".join(found[:3]) + (f" and {len(found) - 3} more" if len(found) > 3 else "")
+
+        words = {
+            DriftKind.MISSING: "{} is no longer available",
+            DriftKind.UNAVAILABLE: "{} can't be used right now (a token or permission may be missing)",
+            DriftKind.AUTH_CHANGED: "{} needs different credentials",
+            DriftKind.TRUST_LOWERED: "{} is no longer trusted",
+            DriftKind.PROVIDER_CHANGED: "{} now comes from a different provider",
+            DriftKind.SCHEMA_CHANGED: "the shape of {} changed",
+            DriftKind.VERSION_CHANGED: "{} changed version",
+        }
+        present = [kind for kind in words if any(c.kind is kind for c in self.changes)]
+        return "; ".join(words[kind].format(names(kind)) for kind in present)
+
     def summary(self) -> str:
         if not self.changes:
             return "No dependency changes since the Recipe was compiled."

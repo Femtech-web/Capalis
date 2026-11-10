@@ -305,3 +305,23 @@ def test_slack_thread_replies_post_find_and_read_back_inside_the_thread() -> Non
     got = adapter.invoke(call(adapter.capability_id, {"channel": "C1", "ts": "1794300001.000001", "thread_ts": thread}))
     assert got.output == {"text": "tracked", "ts": "1794300001.000001"}
     assert "conversations.replies" in script.sent[0].url
+
+
+
+def test_telegram_send_maps_reply_and_never_leaks_the_token_in_errors() -> None:
+    from capalis.adapters.catalog import TELEGRAM_BOT_TOKEN
+    from capalis.adapters.telegram import TelegramAdapter
+
+    token = "123456789:" + "A" * 35
+    ok_reply = reply(200, {"ok": True, "result": {"message_id": 42, "chat": {"id": 1145236794}}})
+    script = Script([ok_reply, reply(429, {"ok": False, "description": "Too Many Requests",
+                                             "parameters": {"retry_after": 3}}),
+                     reply(403, {"ok": False, "description": "Forbidden: bot was blocked by the user"})])
+    adapter = TelegramAdapter(script, {TELEGRAM_BOT_TOKEN: token}.get)
+    sent = adapter.invoke(call(adapter.capability_id, {"chat": "1145236794", "text": "Capalis: ready"}))
+    assert sent.output == {"message_id": 42, "chat": "1145236794"}
+    assert script.sent[0].body == {"chat_id": "1145236794", "text": "Capalis: ready", "disable_web_page_preview": True}
+    limited = adapter.invoke(call(adapter.capability_id, {"chat": "1", "text": "x"}))
+    assert limited.outcome is Outcome.RETRYABLE and limited.retry_after_s == 3
+    blocked = adapter.invoke(call(adapter.capability_id, {"chat": "1", "text": "x"}))
+    assert blocked.outcome is Outcome.REJECTED and token not in (blocked.error or "")

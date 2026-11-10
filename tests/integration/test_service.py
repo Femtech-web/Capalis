@@ -175,6 +175,25 @@ def test_tool_errors_are_json_not_exceptions(env: Env) -> None:
         env.service.approve("bug-reports", "x", STRANGER)
 
 
+def test_settings_are_read_with_the_hermes_get_config_signature() -> None:
+    from capalis.hermes import ServiceHolder
+
+    class Ctx:
+        """v0.23.0: PluginContext.get_config(key, default) reads plugins.entries.capalis.settings.<key>."""
+
+        def __init__(self, settings: dict[str, Any]) -> None:
+            self.settings = settings
+
+        def get_config(self, key: str, default: Any = None) -> Any:
+            return self.settings.get(key, default)
+
+    holder = ServiceHolder(ctx=Ctx({"approvers": ["telegram:1145236794"], "alert_channel": " telegram:1145236794 "}))
+    assert holder._approvers() == ["telegram:1145236794"]
+    assert holder._alert_channel() == "telegram:1145236794"
+    empty = ServiceHolder(ctx=Ctx({}))
+    assert list(empty._approvers()) == [] and empty._alert_channel() is None
+
+
 def test_gateway_hook_consumes_trigger_messages_and_ignores_the_rest(env: Env) -> None:
     from types import SimpleNamespace
 
@@ -208,7 +227,9 @@ def test_drift_sweep_quarantines_without_waiting_for_a_trigger(env: Env) -> None
     env.service.adapters["capalis:slack.message.post"] = FakeAdapter(  # type: ignore[index]
         env.world, replace(post.descriptor, availability=Availability.NEEDS_AUTH))
     [hit] = env.service.drift_sweep()
-    assert hit["recipe_id"] == "bug-reports" and "unavailable" in hit["reason"]
+    assert hit["recipe_id"] == "bug-reports" and hit["reason"].startswith("slack.message.post can't be used")
+    [event] = [e for e in env.store.events() if e.payload.get("to") == "quarantined"]
+    assert "capalis:slack.message.post: unavailable" in event.payload["detail"], "evidence keeps the detail"
     status = env.tool("capalis_status")
     assert status["quarantined"][0]["reason"] == hit["reason"]
     assert env.service.drift_sweep() == []
@@ -289,7 +310,7 @@ def test_owner_views_are_readable_and_raw_json_is_available(env: Env) -> None:
     assert text.startswith(f"Run {sub.run_id[:8]} - bug-reports - live - VERIFIED")
     assert "reply_fixed_readback  V1  met" in text and "Event log:" in text and "intact" in text
     assert json.loads(env.slash(f"evidence {sub.run_id[:8]} --json"))["state"] == "verified"
-    assert "Needs your attention: nothing" in env.slash("")
+    assert "Needs you\n• nothing" in env.slash("")
     assert "no single run" in env.slash("evidence abc")
 
 
@@ -320,15 +341,15 @@ def test_owner_uses_names_and_approves_with_a_button(tmp_path: Path) -> None:
 
         no = surfaces.command(lambda: env.service, ask=ask("cancel"))
         assert no("approve bug-reports", platform="cli") == "Not approved. Nothing changed."
-        assert "When @ada posts in #bugs, it will open an issue in" in asked[0]
-        assert "then post in #engineering" in asked[0]
+        assert "When @ada posts in #bugs, it will:\n• Open an issue in acme-labs/storefront" in asked[0]
+        assert "• Post in #engineering" in asked[0] and "• Wait until the issue is closed" in asked[0]
         stranger = surfaces.command(lambda: env.service, ask=ask("approve"))
         source = type("Src", (), {"user_id": "555"})()
         assert "not an approver" in stranger("approve bug-reports", platform="telegram", source=source)
         assert len(asked) == 1, "no prompt for someone who cannot approve"
         assert "No buttons here" in surfaces.command(lambda: env.service)("approve bug-reports", platform="cli")
         yes = surfaces.command(lambda: env.service, ask=ask("approve"))
-        assert yes("approve bug-reports", platform="cli").startswith("Approved bug-reports v1")
+        assert yes("approve bug-reports", platform="cli").startswith("✅ Approved bug-reports v1 for 30 days.")
     finally:
         env.service.stop()
         env.conn.close()
@@ -402,7 +423,9 @@ def test_owner_alerts_are_sent_once_from_now_on(tmp_path: Path) -> None:
         env.service.adapters["capalis:slack.message.post"] = post  # type: ignore[index]
         assert env.service.send_alerts() == 1
         [alert] = env.world.messages[SLACK]
-        assert "bug-reports v1 is quarantined" in alert["text"] and "Nothing more will be written" in alert["text"]
+        assert alert["text"].startswith("⛔ bug-reports v1 has stopped itself\n\nWhy: slack.message.post")
+        assert "Nothing more will be written until you act." in alert["text"]
+        assert 'say: "Rebuild the bug-reports Recipe"' in alert["text"]
         assert env.service.send_alerts() == 0, "each alert is sent once"
 
         env.world.fault("capalis:slack.message.post", "rejected")
@@ -505,7 +528,7 @@ def test_a_new_version_shows_what_changed_before_approval(env: Env) -> None:
     surfaces.command(lambda: env.service, ask=lambda q, c: asked.append(q))("approve bug-reports", platform="cli")
     env.tool("capalis_recipe", action="qualify", recipe_id="bug-reports", sample_payload=SAMPLE)
     surfaces.command(lambda: env.service, ask=lambda q, c: asked.append(q))("approve bug-reports", platform="cli")
-    assert "Changed since v1: added step ack" in asked[-1]
+    assert "Changed since v1:\n• added step ack" in asked[-1]
 
 
 def test_recipe_export_import_carries_no_approval_and_detects_tampering(env: Env, tmp_path: Path) -> None:
@@ -626,3 +649,40 @@ def test_a_failing_contract_test_cannot_be_approved(env: Env) -> None:
     result = json.loads(env.slash("contract test hermes:read_file"))
     assert not result["passed"] and "File not found" in result["problems"][0]
     assert "only a passing test" in env.slash("contract approve hermes:read_file")
+
+
+
+def test_owner_gets_approval_requests_on_telegram_and_approves_with_one_command(tmp_path: Path) -> None:
+    from fakes import FakeDirectory
+
+    env = Env(tmp_path / "phone.db")
+    env.service.directory = FakeDirectory(REPO, SLACK, DISCORD, REPORTER)
+    env.service.alert_channel = lambda: "telegram:1145236794"
+    try:
+        assert env.service.send_alerts() == 0
+        qualified(env)
+        assert env.service.send_alerts() == 1
+        [request] = env.world.telegram["1145236794"]
+        assert request.startswith("🔔 Ready for your approval: bug-reports v1\n\nWhen @ada posts in #bugs")
+        assert "• Open an issue in acme-labs/storefront (only if needed)\n• Post in #engineering\n" in request
+        assert request.endswith("To approve it from here:\n1. Send /capalis approve\n2. Tap 1 (Approve)")
+
+        assert env.store.claim_control("alerts_lease", ttl_s=300), "e.g. the gateway, sharing this database"
+        env.store.append_event("recipe.state", {"digest": env.store.recipes()[0][2], "to": "quarantined",
+                                                "reason": "test"})
+        assert env.service.send_alerts() == 0, "one process sends while another holds the lease"
+        env.store.release_control("alerts_lease")
+        assert env.service.send_alerts() == 1 and len(env.world.telegram["1145236794"]) == 2
+
+        env.service.approvers = lambda: ["telegram:1145236794"]
+        picked: list[str] = []
+        command = surfaces.command(lambda: env.service, ask=lambda q, c: picked.append(q) or "approve")
+        source = type("Src", (), {"user_id": "1145236794"})()
+        done = command("approve", platform="telegram", source=source)
+        assert done.startswith("✅ Approved bug-reports v1 for 30 days.\n\nWhen @ada posts in #bugs, it now runs")
+        assert "It can only act in: #engineering, acme-labs/storefront." in done and "sha256" not in done
+        assert picked[0].startswith("Approve bug-reports v1?\n\n")
+        assert command("approve", platform="telegram", source=source) == "Nothing is waiting for your approval."
+    finally:
+        env.service.stop()
+        env.conn.close()

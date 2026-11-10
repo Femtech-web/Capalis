@@ -226,7 +226,7 @@ def handlers(service: ServiceFactory) -> dict[str, Callable[..., str]]:
 
 COMMAND_HELP = """/capalis                         status
 /capalis setup                      what is connected, and what to fix
-/capalis approve <recipe>           review and approve with a button
+/capalis approve [recipe]           review and approve with a button (the Recipe can be left out if only one is waiting)
 /capalis approve <recipe> <digest> approve the reviewed version by its digest (from 'show')
 /capalis show <recipe>              what a Recipe does, its targets and checks
 /capalis runs [recipe]              recent runs
@@ -275,6 +275,13 @@ def command(service: ServiceFactory, ask: Ask | None = None) -> Callable[..., st
                 return COMMAND_HELP
             if verb == "setup":
                 return view(svc.setup_report(), render.setup)
+            if verb == "approve" and not rest:
+                waiting = [r["recipe_id"] for r in svc.recipes() if r["state"] == "awaiting_approval"]
+                if len(waiting) != 1:
+                    return ("Nothing is waiting for your approval." if not waiting else
+                            "Several Recipes are waiting: " + ", ".join(waiting)
+                            + ". Say which: /capalis approve <recipe>")
+                return _approve_with_choice(svc, waiting[0], actor, ask)
             if verb == "approve" and len(rest) == 1:
                 return _approve_with_choice(svc, rest[0], actor, ask)
             if verb == "approve" and len(rest) == 2:
@@ -331,7 +338,7 @@ def _approve_with_choice(svc: Capalis, recipe_id: str, actor: Actor, ask: Ask | 
     desc = svc.describe(recipe)
     if state.value != "awaiting_approval":
         return f"{recipe_id} v{recipe.version} is {state.value.replace('_', ' ')}; there is nothing to approve."
-    question = f"{render.plain(desc)}\nApprove {recipe_id} v{recipe.version} ({desc['short_digest']})?"
+    question = f"Approve {recipe_id} v{recipe.version}?\n\n{render.plain(desc)}"
     answer = ask(question, [{"value": "approve", "label": "Approve"}, {"value": "cancel", "label": "Not now"}]) \
         if ask is not None else None
     if answer is None:

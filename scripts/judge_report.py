@@ -93,6 +93,11 @@ CLAIMS: list[tuple[str, str, list[str]]] = [
      "Each slot is deduplicated by its minute; counting starts at approval; only the latest missed slot runs.",
      ["test_cron.py::test_latest_missed_slot_fires_once",
       "test_service.py::test_site_watch_fires_on_schedule_and_alerts_once_per_slot"]),
+    ("The owner can approve from their phone, and the AI still can't.",
+     "Approval requests arrive on Telegram; one command shows the summary and an Approve button bound to that version.",
+     ["test_service.py::test_owner_gets_approval_requests_on_telegram_and_approves_with_one_command",
+      "test_adapters.py::test_telegram_send_maps_reply_and_never_leaks_the_token_in_errors",
+      "test_plugin_registration.py::test_model_tools_cannot_approve_resume_or_confirm"]),
     ("The owner is told when something needs a person, once.",
      "Quarantines, unknown effects, confirmations and failed runs become one alert each, retried until delivered.",
      ["test_service.py::test_owner_alerts_are_sent_once_from_now_on"]),
@@ -112,8 +117,9 @@ CLAIMS: list[tuple[str, str, list[str]]] = [
 ]
 
 LIMITS = [
-    "Slack-channel intake, owner alerts, schedules and contracts for other Hermes tools pass their tests here, but "
-    "have not yet run on the owner's accounts.",
+    "Telegram approvals and alerts, Slack-channel intake, schedules and contracts for other Hermes tools pass their "
+    "tests here, but have not yet run on the owner's accounts.",
+    "Telegram and Slack incoming webhooks cannot read a message back, so posts there are never used as proof.",
     "Slack incoming webhooks cannot read messages back, so Capalis reports them as unverifiable and never "
     "recommends them where a check is required.",
     "Writes run only through Capalis's reviewed adapters (GitHub Issues, Slack, Discord, HTTPS GET); other Hermes "
@@ -189,14 +195,17 @@ def main() -> None:
         tests = "<br>".join(f"`{t}` ({s})" for t, s in item["tests"].items())
         lines.append(f"| {item['claim']} | {item['how']} | {tests} | {'yes' if item['holds'] else '**no**'} |")
     lines += ["", "## Owner-run live loop", "",
-              "On 2026-11-10 the owner ran the full loop on their own Discord, GitHub and Slack accounts, through a "
-              "real Hermes chat and the Hermes gateway:", "",
+              "On 2026-11-10 the owner ran the full loop on their own Discord, GitHub, Slack and Telegram accounts, "
+              "through a real Hermes chat and the Hermes gateway:", "",
               "| Run | What happened | Independent checks |", "| --- | --- | --- |",
               "| `7994c4cf` | Discord report -> issue #3 -> Slack notice | 2 of 2 V1 met, verified |",
               "| `5d7da41e` | ... then the owner closed the issue, and Capalis replied under the report | "
               "3 of 3 V1 met, verified |",
               "| `75415396` | A changed GitHub capability quarantined the old version; the model rebuilt it from "
               "names; issue #5, Slack, \"tracked as #5\", closed, \"fixed and closed\" | 4 of 4 V1 met, verified |",
+              "| `57f7bd53` | Approved from a phone: the Telegram approval request arrived 9 s after the practice run, "
+              "the owner (`telegram:<id>`) approved with a button; issue #6, Slack, \"tracked as #6\", closed, "
+              "\"fixed and closed\" | 4 of 4 V1 met, verified |",
               "",
               "Screenshots: [docs/assets](docs/assets).", "",
               "## Live run on real services (automated)", ""]

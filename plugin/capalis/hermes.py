@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from .adapters import inventory
-from .adapters.catalog import DISCORD_BOT_TOKEN, GITHUB_TOKEN, SLACK_BOT_TOKEN, SLACK_WEBHOOK_URL
+from .adapters.catalog import DISCORD_BOT_TOKEN, GITHUB_TOKEN, SLACK_BOT_TOKEN, SLACK_WEBHOOK_URL, TELEGRAM_BOT_TOKEN
 from .adapters.directory import Directory
 from .adapters.http import UrllibTransport
 from .core.redact import Redactor
@@ -35,26 +35,26 @@ class ServiceHolder:
                 self._service = self._factory()
             return self._service
 
-    def _alert_channel(self) -> str | None:
+    def _setting(self, key: str, default: Any) -> Any:
+        # v0.23.0: ctx.get_config(key, default) reads plugins.entries.capalis.settings.<key>.
         try:
-            settings = self.ctx.get_config() or {}
+            return self.ctx.get_config(key, default)
         except Exception:
-            return None
-        value = settings.get("alert_channel") if isinstance(settings, dict) else None
-        return str(value) if value else None
+            log.warning("capalis: could not read setting %s", key, exc_info=True)
+            return default
+
+    def _alert_channel(self) -> str | None:
+        return str(self._setting("alert_channel", "") or "").strip() or None
 
     def _approvers(self) -> Sequence[str]:
-        try:
-            settings = self.ctx.get_config() or {}
-        except Exception:
-            return ()
-        value = settings.get("approvers") if isinstance(settings, dict) else None
+        value = self._setting("approvers", [])
         return [str(v) for v in value] if isinstance(value, list) else ()
 
     def _build(self) -> Capalis:
         from plugins.plugin_storage import plugin_data_dir, plugin_db
 
-        secrets = [v for name in (GITHUB_TOKEN, SLACK_BOT_TOKEN, SLACK_WEBHOOK_URL, DISCORD_BOT_TOKEN)
+        secrets = [v for name in (GITHUB_TOKEN, SLACK_BOT_TOKEN, SLACK_WEBHOOK_URL, DISCORD_BOT_TOKEN,
+                                  TELEGRAM_BOT_TOKEN)
                    if (v := inventory.hermes_secret(name))]
         store = Store(plugin_db(PLUGIN, "capalis.db"), redactor=Redactor(secrets))
         transport = UrllibTransport()

@@ -13,6 +13,7 @@ from .discord import DiscordAdapter
 from .github import GitHubAdapter
 from .http import Transport, UrllibTransport
 from .slack import SlackAdapter
+from .telegram import TelegramAdapter
 from .web import HttpGetAdapter
 
 SecretReader = Callable[[str], str | None]
@@ -53,6 +54,8 @@ def build(secret: SecretReader = hermes_secret, transport: Transport | None = No
             inner = SlackAdapter(cap.id, transport, secret)
         elif cap.provider == "discord":
             inner = DiscordAdapter(cap.id, transport, secret)
+        elif cap.provider == "telegram":
+            inner = TelegramAdapter(transport, secret)
         else:
             inner = HttpGetAdapter(transport)
         adapters[cap.id] = _Available(inner, secret)

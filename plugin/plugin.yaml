@@ -1,5 +1,5 @@
 name: capalis
-version: "0.1.0"
+version: "0.2.0"
 manifest_version: 2
 description: >-
   Capability intelligence and Verified Recipes: compare capabilities for a goal, compile a scoped,
@@ -24,12 +24,12 @@ config_schema:
     type: list
     default: []
     label: "Approvers"
-    description: "Chat users who may approve, resume or revoke Recipes, as platform:user_id (e.g. telegram:12345). Local CLI, TUI and Desktop sessions can always approve."
+    description: "Chat users who may approve, resume or revoke Recipes, as platform:user_id (e.g. telegram:12345, to approve from your phone). Local CLI, TUI and Desktop sessions can always approve."
   alert_channel:
     type: str
     default: ""
     label: "Alerts channel"
-    description: "Where Capalis tells you when something needs a person (a Recipe quarantined, a write it could not check, a step waiting for confirmation, a failed run), as slack:#channel or discord:#channel. Empty: no alerts."
+    description: "Where Capalis tells you when something needs a person (a Recipe quarantined, a write it could not check, a step waiting for confirmation, a failed run), as telegram:<chat id>, slack:#channel or discord:#channel. Approval requests are sent there too. Empty: no alerts."
   github_token:
     type: secret
     env: CAPALIS_GITHUB_TOKEN
@@ -45,6 +45,11 @@ config_schema:
     env: CAPALIS_DISCORD_BOT_TOKEN
     label: "Discord bot token"
     description: "For Recipes that reply in Discord; the bot needs View Channel, Send Messages and Read Message History."
+  telegram_bot_token:
+    type: secret
+    env: CAPALIS_TELEGRAM_BOT_TOKEN
+    label: "Telegram bot token"
+    description: "For alerts and approval requests on your phone. Telegram messages cannot be read back, so they are never used as proof."
   slack_webhook_url:
     type: secret
     env: CAPALIS_SLACK_WEBHOOK_URL

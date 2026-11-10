@@ -26,6 +26,7 @@ Add only the credentials you need. The easiest place is Hermes Desktop, under **
 | GitHub | A [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to your repositories, with **Issues: Read and write** | `CAPALIS_GITHUB_TOKEN` |
 | Slack | A Slack app bot token with `chat:write`, `channels:read` and `channels:history` (plus `groups:*` for private channels). Invite the bot to the channel. | `CAPALIS_SLACK_BOT_TOKEN` |
 | Discord | A Discord bot with **View Channel**, **Send Messages** and **Read Message History** in your channel, and the **Message Content** intent on | `CAPALIS_DISCORD_BOT_TOKEN` |
+| Telegram (optional, your phone) | A bot from [@BotFather](https://t.me/BotFather); send it any message once so it can write to you | `CAPALIS_TELEGRAM_BOT_TOKEN` |
 
 For Discord or Slack messages to *start* a Recipe, Hermes's own gateway has to be connected to that platform (`hermes gateway setup`). Then set these and restart the gateway:
 
@@ -34,7 +35,7 @@ For Discord or Slack messages to *start* a Recipe, Hermes's own gateway has to b
 | Discord | `DISCORD_FREE_RESPONSE_CHANNELS` (your trigger channel, so messages arrive without an @mention) and `DISCORD_ALLOWED_USERS` (the people who may report) |
 | Slack | `SLACK_FREE_RESPONSE_CHANNELS` and `SLACK_ALLOWED_USERS`, in the same way |
 
-Optional: set **Alerts channel** (for example `slack:#ops` or `discord:#ops`). Capalis posts there when something needs a person: a Recipe quarantined, a write it couldn't check, a step waiting for confirmation, a failed run. Each message comes with the exact command to type.
+Optional: set **Alerts channel**. `telegram:<your chat id>` is best: it's your phone. `slack:#ops` and `discord:#ops` work too. Capalis posts there when something needs a person: a Recipe quarantined, a write it couldn't check, a step waiting for confirmation, a failed run. Each message comes with the exact command to type.
 
 ## 3. Check everything is ready
 
@@ -78,12 +79,35 @@ If you want to choose between options, say "compare first". To make that your de
 /capalis approve bug-reports
 ```
 
-You get a one-paragraph summary and two buttons:
+You get a short summary and two buttons:
 
-> When @ada posts in #bugs, it will open an issue in my-app (if needed), then post in #engineering, then post in #bugs, then wait until the issue is closed, then post in #bugs. Every write is read back independently before it counts as done.
+> **Approve bug-reports v1?**
+> When @ada posts in #bugs, it will:
+> • Open an issue in my-app (only if needed)
+> • Post in #engineering
+> • Post in #bugs: ack
+> • Wait until the issue is closed
+> • Post in #bugs: reply fixed (only if needed)
+> • Post in #bugs: reply closed (only if needed)
+>
+> Every write is read back before it counts as done.
 > **[Approve]  [Not now]**
 
 The approval covers exactly the version you were shown, for 30 days. If the Recipe changes, it needs a new approval, and the summary starts with **what changed since the last version**. Use `/capalis show bug-reports` for every step, target and limit.
+
+### Approve from your phone
+
+With Telegram connected, add yourself under **Settings → Plugins → Capalis → Approvers** as `telegram:<your user id>`. Then, when a Recipe is ready, Capalis messages you:
+
+> 🔔 Ready for your approval: bug-reports v2
+> When @ada posts in #bugs, it will: …
+> To approve it from here: 1. Send /capalis approve 2. Tap 1 (Approve)
+
+Send `/capalis approve` to the bot. Telegram numbers the buttons, and the list above them says which is which, so tap **1** (Approve) or **2** (Not now). The reply confirms what it can now do and where:
+
+> ✅ Approved bug-reports v2 for 30 days.
+> When @ada posts in #bugs, it now runs on its own.
+> It can only act in: #bugs, #engineering, my-app. Your Telegram user id is the number Hermes shows for you; it's also in your Hermes `TELEGRAM_ALLOWED_USERS` setting.
 
 ## 6. Use it
 

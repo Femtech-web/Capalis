@@ -103,6 +103,7 @@ _TARGET_PATTERNS: Mapping[str, re.Pattern[str]] = {
     "discord.channel": re.compile(r"[0-9]{17,20}"),
     "http.origin": re.compile(r"https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{2,5})?"),
     "hermes.chat": re.compile(r"[a-z][a-z0-9_]{1,31}:[A-Za-z0-9_.:@-]{1,128}"),
+    "telegram.chat": re.compile(r"-?[0-9]{5,20}|@[A-Za-z][A-Za-z0-9_]{4,31}"),
 }
 _GENERIC_TARGET = re.compile(r"[A-Za-z0-9._:/@-]{1,200}")
 _KIND = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+")

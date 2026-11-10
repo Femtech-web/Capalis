@@ -3,7 +3,7 @@
   "hermes": "v0.23.0 (2bd378ed)",
   "python": "3.13.9",
   "totals": {
-    "passed": 300,
+    "passed": 304,
     "failed": 0,
     "skipped": 1
   },
@@ -129,6 +129,16 @@
       "tests": {
         "test_cron.py::test_latest_missed_slot_fires_once": "passed",
         "test_service.py::test_site_watch_fires_on_schedule_and_alerts_once_per_slot": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "The owner can approve from their phone, and the AI still can't.",
+      "how": "Approval requests arrive on Telegram; one command shows the summary and an Approve button bound to that version.",
+      "tests": {
+        "test_service.py::test_owner_gets_approval_requests_on_telegram_and_approves_with_one_command": "passed",
+        "test_adapters.py::test_telegram_send_maps_reply_and_never_leaks_the_token_in_errors": "passed",
+        "test_plugin_registration.py::test_model_tools_cannot_approve_resume_or_confirm": "passed"
       },
       "holds": true
     },

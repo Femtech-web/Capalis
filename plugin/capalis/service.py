@@ -285,10 +285,9 @@ class Capalis:
                 self.store.transition(previous.digest, RecipeState.RETIRED,
                                       reason=f"superseded by v{recipe.version}")
         self.store.transition(recipe.digest, RecipeState.LIVE, reason=f"approved by {actor.id}")
-        days = (grant.expires_at - grant.issued_at) // 86400
-        return (f"Approved {recipe_id} v{recipe.version} for {days} days: "
-                f"{', '.join(sorted(e.value for e in grant.effects))} on "
-                f"{', '.join(sorted(str(t) for t in grant.targets))}, triggered by {recipe.trigger.source}.")
+        from .adapters.render import approved
+
+        return approved(self.describe(recipe), (grant.expires_at - grant.issued_at) // 86400)
 
     def resume(self, recipe_id: str | None, actor: Actor) -> str:
         self.authorize_actor(actor)
@@ -303,8 +302,10 @@ class Capalis:
             raise ServiceError(f"{recipe_id} has no paused version")
         drift = detect_drift(recipe, self.descriptors())
         if drift.blocking:
-            self.store.transition(recipe.digest, RecipeState.QUARANTINED, reason=drift.summary())
-            raise ServiceError(f"dependencies changed while paused, so it is quarantined: {drift.summary()}")
+            self.store.transition(recipe.digest, RecipeState.QUARANTINED, reason=drift.plain(),
+                                  detail=drift.summary())
+            raise ServiceError(f"something it depends on changed while paused, so it is quarantined: "
+                               f"{drift.plain()}")
         self.store.transition(recipe.digest, RecipeState.LIVE, reason=f"resumed by {actor.id}")
         return f"{recipe_id} v{recipe.version} is live again."
 
@@ -370,9 +371,10 @@ class Capalis:
                     continue
                 report = detect_drift(recipe, registry)
                 if report.blocking:
-                    self.store.transition(recipe.digest, RecipeState.QUARANTINED, reason=report.summary())
+                    self.store.transition(recipe.digest, RecipeState.QUARANTINED, reason=report.plain(),
+                                          detail=report.summary())
                     quarantined.append({"recipe_id": recipe_id, "version": str(recipe.version),
-                                        "reason": report.summary()})
+                                        "reason": report.plain()})
         return quarantined
 
     # -- Schedules ----------------------------------------------------------------------------------
@@ -414,28 +416,40 @@ class Capalis:
         spec = (self.alert_channel() or "").strip()
         if not spec or self.directory is None:
             return 0
+        if not self.store.claim_control("alerts_lease", ttl_s=300):
+            return 0
+        try:
+            return self._send_alerts(spec, limit)
+        finally:
+            self.store.release_control("alerts_lease")
+
+    def _send_alerts(self, spec: str, limit: int) -> int:
         cursor = self.store.control("alerts_seq")
         if cursor is None:
             self.store.set_control("alerts_seq", str(self.store.last_event_seq()))
             return 0
         platform, _, name = spec.partition(":")
-        cid = {"slack": "capalis:slack.message.post", "discord": "capalis:discord.message.post"}.get(platform)
+        cid = {"slack": "capalis:slack.message.post", "discord": "capalis:discord.message.post",
+               "telegram": "capalis:telegram.message.post"}.get(platform)
         if cid is None or cid not in self.adapters:
             return 0
         try:
-            channel = (self.directory.slack_channel(name) if platform == "slack"
-                       else self.directory.discord_channel(name)).value
+            channel = name.strip() if platform == "telegram" else (
+                self.directory.slack_channel(name) if platform == "slack" else self.directory.discord_channel(name)
+            ).value
         except ValueError:
             return 0
         sent = 0
         for event in self.store.events_after(int(cursor)):
-            text = self._alert_text(event)
+            text = self._alert_text(event, platform)
             if text is not None:
                 if sent >= limit:
                     break
-                target = Target(f"{platform}.channel", channel)
-                result = self.adapters[cid].invoke(Invocation(cid, target, {"channel": channel, "text": text},
-                                                              f"cap-alert-{event.seq}", 20))
+                field, kind = ("chat", "telegram.chat") if platform == "telegram" else ("channel",
+                                                                                     f"{platform}.channel")
+                call = Invocation(cid, Target(kind, channel), {field: channel, "text": text},
+                                  f"cap-alert-{event.seq}", 20)
+                result = self.adapters[cid].invoke(call)
                 if result.outcome is not Outcome.OK:
                     self.store.append_event("alert.failed", {"seq": event.seq, "error": result.error or ""})
                     break
@@ -444,13 +458,29 @@ class Capalis:
             self.store.set_control("alerts_seq", str(event.seq))
         return sent
 
-    def _alert_text(self, event: Any) -> str | None:
+    def _alert_text(self, event: Any, platform: str = "") -> str | None:
         payload = event.payload
+        if event.kind == "recipe.state" and payload.get("to") == RecipeState.AWAITING_APPROVAL.value \
+                and payload.get("from") != RecipeState.LIVE.value:
+            from .adapters.render import plain
+
+            recipe = self.store.recipe(payload["digest"])
+            return "\n".join([
+                f"🔔 Ready for your approval: {recipe.recipe_id} v{recipe.version}", "",
+                plain(self.describe(recipe)), "",
+                "To approve it from here:",
+                "1. Send /capalis approve",
+                # Telegram's choice buttons are numbered; the labels are listed in the message above them.
+                "2. Tap 1 (Approve)" if platform == "telegram" else "2. Tap Approve"])
         if event.kind == "recipe.state" and payload.get("to") == RecipeState.QUARANTINED.value:
             recipe = self.store.recipe(payload["digest"])
-            return (f"Capalis: {recipe.recipe_id} v{recipe.version} is quarantined because something it depends "
-                    f"on changed ({payload.get('reason', '')}). Nothing more will be written. Ask Hermes to rebuild "
-                    f"it, then approve the new version.")
+            return "\n".join([
+                f"⛔ {recipe.recipe_id} v{recipe.version} has stopped itself", "",
+                f"Why: {payload.get('reason', '') or 'something it depends on changed'}.",
+                "Nothing more will be written until you act.", "",
+                "To fix it:",
+                f'1. In Hermes, say: "Rebuild the {recipe.recipe_id} Recipe"',
+                "2. Approve the new version when this chat asks you"])
         if event.kind != "run.state" or event.run_id is None:
             return None
         run = self.store.run(event.run_id)
@@ -459,13 +489,24 @@ class Capalis:
             return None
         target, detail = payload.get("to"), str(payload.get("detail") or "")
         if target == RunState.NEEDS_RECONCILIATION.value:
-            return (f"Capalis: in run {short} ({run.recipe_id}) a write may or may not have happened and cannot be "
-                    f"checked automatically: {detail}. Reply in Hermes with /capalis resolve {short} <step> "
-                    "applied or not-applied.")
+            step = next((a.step_id for a in self.store.unfinished_intents() if a.run_id == run.run_id), "<step>")
+            return "\n".join([
+                f"⚠️ {run.recipe_id} needs you (run {short})", "",
+                "A write may or may not have happened, and Capalis can't check it by itself.",
+                f"Details: {detail}", "",
+                "Look at where it was going, then send one of:",
+                f"• /capalis resolve {short} {step} applied",
+                f"• /capalis resolve {short} {step} not-applied"])
         if target == RunState.WAITING.value and "confirmation" in detail:
-            return f"Capalis: run {short} ({run.recipe_id}) is waiting for you. /capalis confirm {short} <step>"
+            return "\n".join([
+                f"⏳ {run.recipe_id} is waiting for you (run {short})", "",
+                detail, "",
+                f"When you're ready, send: /capalis confirm {short} <step>"])
         if target == RunState.FAILED.value:
-            return f"Capalis: run {short} ({run.recipe_id}) did not complete: {detail}. /capalis evidence {short}"
+            return "\n".join([
+                f"❌ {run.recipe_id} did not finish (run {short})", "",
+                detail, "",
+                f"See every step: /capalis evidence {short}"])
         return None
 
     # -- Status and evidence ------------------------------------------------------------------------
@@ -508,19 +549,32 @@ class Capalis:
                             "max_runs_per_hour": recipe.trigger.max_runs_per_hour}}
 
     def recipes(self) -> list[dict[str, Any]]:
+        """The latest version of each Recipe; older versions are history, kept in the event log."""
         seen: dict[str, dict[str, Any]] = {}
         for recipe_id, version, digest, state in self.store.recipes():
             seen[recipe_id] = {"recipe_id": recipe_id, "version": version, "short_digest": digest[7:19],
-                               "state": state.value}
+                               "state": state.value, "digest": digest}
+        registry = None
+        for entry in seen.values():
+            digest = entry.pop("digest")
+            if entry["state"] == RecipeState.PAUSED.value:
+                entry["reason"] = self._state_reason(digest)
+            elif entry["state"] == RecipeState.QUARANTINED.value:
+                # A change that is still there explains itself best (and in plain words, even for reasons
+                # recorded by older versions); otherwise the reason recorded at the time stands.
+                registry = registry or self.descriptors()
+                drift = detect_drift(self.store.recipe(digest), registry)
+                entry["reason"] = drift.plain() if drift.blocking else self._state_reason(digest)
         return list(seen.values())
 
     def status(self) -> dict[str, Any]:
         # Sweep first so status never shows a Recipe as live after its dependencies changed.
         self.drift_sweep()
         unfinished = self.store.unfinished_intents()
-        quarantined = [{"recipe_id": rid, "version": version, "reason": self._state_reason(digest)}
-                       for rid, version, digest, state in self.store.recipes() if state is RecipeState.QUARANTINED]
-        return {"globally_paused": self.store.global_paused(), "recipes": self.recipes(),
+        latest = self.recipes()
+        quarantined = [{"recipe_id": r["recipe_id"], "version": r["version"], "reason": r.get("reason", "")}
+                       for r in latest if r["state"] == RecipeState.QUARANTINED.value]
+        return {"globally_paused": self.store.global_paused(), "recipes": latest,
                 "quarantined": quarantined,
                 "recent_runs": [self.run_line(r) for r in self.store.runs(limit=10)],
                 "needs_attention": [{"run_id": a.run_id, "step": a.step_id, "state": a.state.value,
@@ -731,6 +785,9 @@ class Capalis:
         with self._worker_lock:
             if self._stopping.is_set() or (self._worker is not None and self._worker.is_alive()):
                 return
+            # Start the alert cursor before anything can sweep, so a quarantine found at startup is reported.
+            if (self.alert_channel() or "").strip() and self.store.control("alerts_seq") is None:
+                self.store.set_control("alerts_seq", str(self.store.last_event_seq()))
             self._worker = threading.Thread(target=self._work_loop, args=(interval_s,), name="capalis-runner",
                                             daemon=True)
             self._worker.start()

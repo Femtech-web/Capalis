@@ -22,6 +22,7 @@ class RecordingCtx:
         self.tools: dict[str, dict[str, Any]] = {}
         self.commands: dict[str, Any] = {}
         self.hooks: dict[str, Any] = {}
+        self.settings: dict[str, Any] = {}
 
     def register_tool(self, name: str, toolset: str, schema: dict[str, Any], handler: Any,
                       check_fn: Any = None, requires_env: list[str] | None = None, is_async: bool = False,
@@ -35,8 +36,9 @@ class RecordingCtx:
     def register_hook(self, hook_name: str, callback: Any) -> None:
         self.hooks[hook_name] = callback
 
-    def get_config(self) -> dict[str, Any]:
-        return {}
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Same signature as v0.23.0's PluginContext.get_config (plugin-relative settings key)."""
+        return self.settings.get(key, default)
 
 
 def load_plugin() -> ModuleType:
@@ -116,3 +118,4 @@ def test_private_notes_are_never_tracked() -> None:
     tracked = subprocess.run(["git", "ls-files", "private-notes"], cwd=ROOT, capture_output=True, text=True,
                              check=True)
     assert tracked.stdout == ""
+

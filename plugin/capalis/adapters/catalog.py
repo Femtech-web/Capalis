@@ -17,6 +17,7 @@ GITHUB_TOKEN = "CAPALIS_GITHUB_TOKEN"
 SLACK_BOT_TOKEN = "CAPALIS_SLACK_BOT_TOKEN"
 SLACK_WEBHOOK_URL = "CAPALIS_SLACK_WEBHOOK_URL"
 DISCORD_BOT_TOKEN = "CAPALIS_DISCORD_BOT_TOKEN"
+TELEGRAM_BOT_TOKEN = "CAPALIS_TELEGRAM_BOT_TOKEN"
 
 _STR = {"type": "string"}
 _INT = {"type": "integer"}
@@ -125,6 +126,15 @@ CATALOG: tuple[CapabilityDescriptor, ...] = (
     _cap("capalis:discord.message.get", summary="Read one Discord message back", effect=Effect.READ,
          inputs={"channel": _STR, "id": _SNOWFLAKE}, required=["channel", "id"], output=DISCORD_MESSAGE,
          target=_DISCORD_CHANNEL, auth=DISCORD_BOT_TOKEN, operation="discord.message.get", setup_hint=_DISCORD_SETUP),
+    _cap("capalis:telegram.message.post", summary="Send a Telegram message to one chat as the Capalis bot",
+         effect=Effect.EXTERNAL_SEND, inputs={"chat": _STR, "text": {"type": "string", "minLength": 1,
+                                                                     "maxLength": 4000}},
+         required=["chat", "text"], output=_obj({"message_id": _INT, "chat": _STR}, ["message_id", "chat"]),
+         target=TargetSpec("chat", "telegram.chat"), auth=TELEGRAM_BOT_TOKEN, operation="telegram.message.post",
+         limits=("Telegram's Bot API cannot read a message back, so posts are unverifiable",
+                 "A timed-out post cannot be checked, so it is never retried automatically"),
+         setup_hint=(f"Create a bot with @BotFather, start a chat with it, and store its token as "
+                     f"{TELEGRAM_BOT_TOKEN}.")),
     _cap("capalis:http.get", summary="Fetch one path from an approved HTTPS origin, without credentials",
          effect=Effect.READ, inputs={"origin": _STR, "path": {"type": "string", "pattern": "^/", "maxLength": 512}},
          required=["origin", "path"], output=_obj({"status": _INT, "body_text": _STR}, ["status", "body_text"]),

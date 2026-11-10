@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from .catalog import DISCORD_BOT_TOKEN, GITHUB_TOKEN, SLACK_BOT_TOKEN
+from .catalog import DISCORD_BOT_TOKEN, GITHUB_TOKEN, SLACK_BOT_TOKEN, TELEGRAM_BOT_TOKEN
 from .http import Response, Transport, TransportError
 
 SLACK_ID = re.compile(r"[CGD][A-Z0-9]{8,12}")
@@ -72,6 +72,13 @@ class Directory:
         if not 200 <= response.status < 300:
             raise ResolveError(f"Discord returned {response.status} for {path.split('?')[0]}")
         return response.json()
+
+    def _telegram(self, method: str) -> dict[str, Any]:
+        response = self._get(f"https://api.telegram.org/bot{self._token(TELEGRAM_BOT_TOKEN)}/{method}", {})
+        data = response.json() or {}
+        if not data.get("ok"):
+            raise ResolveError(f"Telegram refused {method}: {data.get('description') or response.status}")
+        return dict(data.get("result") or {})
 
     def _github(self, path: str) -> Response:
         headers = {"Authorization": f"Bearer {self._token(GITHUB_TOKEN)}", "Accept": "application/vnd.github+json",
@@ -235,8 +242,6 @@ class Check:
 def readiness(directory: Directory, targets: set[str], discord_triggers: set[str],
               slack_triggers: Iterable[str] = ()) -> list[Check]:
     """Plain-language setup check: credentials, identities, and access to every target in use."""
-    from .catalog import DISCORD_BOT_TOKEN, GITHUB_TOKEN, SLACK_BOT_TOKEN
-
     checks: list[Check] = []
     settings_fix = "add it in Hermes Desktop (Settings > Plugins > Capalis) or run: hermes config set {name} <value>"
     for area, name, probe in (
@@ -259,6 +264,15 @@ def readiness(directory: Directory, targets: set[str], discord_triggers: set[str
             checks.append(Check(area, True, f"connected as {who}"))
         except (ResolveError, PermissionError) as exc:
             checks.append(Check(area, False, f"{name} did not work: {exc}", "create a new token and store it again"))
+    if directory.secret(TELEGRAM_BOT_TOKEN):
+        try:
+            checks.append(Check("Telegram", True, f"connected as @{directory._telegram('getMe').get('username', '')}"))
+        except ResolveError as exc:
+            checks.append(Check("Telegram", False, f"{TELEGRAM_BOT_TOKEN} did not work: {exc}",
+                                "create a new token with @BotFather and store it again"))
+    else:
+        checks.append(Check("Telegram", None, "not set: optional, for alerts and approvals on your phone",
+                            settings_fix.format(name=TELEGRAM_BOT_TOKEN)))
     for target in sorted(targets):
         kind, _, value = target.partition(":")
         try:

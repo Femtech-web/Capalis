@@ -31,6 +31,7 @@ class World:
     issues: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     messages: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     discord: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    telegram: dict[str, list[str]] = field(default_factory=dict)
     http_status: dict[str, int] = field(default_factory=dict)
     calls: list[Invocation] = field(default_factory=list)
     faults: dict[str, list[Fault]] = field(default_factory=dict)
@@ -124,6 +125,11 @@ class World:
                 return InvokeResult.ok({"id": m["id"], "channel": m["channel"], "text": m["text"]})
         return InvokeResult(Outcome.REJECTED, error="Unknown Message")
 
+    def _telegram_post(self, call: Invocation) -> dict[str, Any]:
+        chat = self.telegram.setdefault(call.inputs["chat"], [])
+        chat.append(call.inputs["text"])
+        return {"message_id": len(chat), "chat": call.inputs["chat"]}
+
     def _http_get(self, call: Invocation) -> dict[str, Any]:
         url = call.inputs["origin"] + call.inputs["path"]
         return {"status": self.http_status.get(url, 404), "body_text": ""}
@@ -139,6 +145,7 @@ class World:
             "capalis:slack.message.get": self._message_get,
             "capalis:slack.webhook.post": self._webhook_post,
             "capalis:http.get": self._http_get,
+            "capalis:telegram.message.post": self._telegram_post,
             "capalis:discord.message.post": self._discord_post,
             "capalis:discord.message.find_by_key": self._discord_find,
             "capalis:discord.message.get": self._discord_get,
