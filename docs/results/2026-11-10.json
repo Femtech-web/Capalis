@@ -3,7 +3,7 @@
   "hermes": "v0.23.0 (2bd378ed)",
   "python": "3.13.9",
   "totals": {
-    "passed": 304,
+    "passed": 305,
     "failed": 0,
     "skipped": 1
   },

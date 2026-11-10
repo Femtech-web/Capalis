@@ -190,7 +190,7 @@ Anyone whose work runs through chat and who is tired of things falling through t
 
 1. **Claims:** [JUDGES.md](JUDGES.md) lists every claim with the tests that prove it, regenerated from a real run. All of them hold.
 2. **Live proof:** [Proof](#proof-what-ran-for-real) lists seven verified runs on real GitHub, Slack, Discord and Telegram accounts.
-3. **Run the suite:** `uv sync --group dev && make check` runs lint, strict typing and 304 tests in about 5 seconds, with no accounts needed.
+3. **Run the suite:** `uv sync --group dev && make check` runs lint, strict typing and 305 tests in about 5 seconds, with no accounts needed.
 4. **Try to break it:** [`tests/integration/test_runner.py`](tests/integration/test_runner.py) crashes mid-write, fakes a success, revokes approval mid-run, changes a dependency and feeds hostile text.
 5. **Read how it's built:**
    - [Architecture](docs/ARCHITECTURE.md)

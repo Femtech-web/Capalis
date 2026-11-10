@@ -224,10 +224,14 @@ class Capalis:
         sender = next(iter(sorted(recipe.trigger.senders)), "")
         sub = self.runner.submit(recipe, source=recipe.trigger.source, sender=sender, payload=sample_payload,
                                  mode=Mode.SHADOW, dedupe_value=f"qualify-{uuid.uuid4().hex[:12]}")
+        run_state = sub.state
+        if sub.run_id is not None and run_state in (RunState.QUEUED, RunState.RUNNING):
+            # The background worker may have claimed the run first; judge it once it has finished.
+            run_state = self._settle(sub.run_id)
         report = {"accepted": sub.accepted, "code": sub.code, "detail": sub.detail}
         if sub.run_id is not None:
             report["run"] = self.evidence(sub.run_id)
-        passed = (sub.accepted and sub.run_id is not None and sub.state is RunState.UNVERIFIED
+        passed = (sub.accepted and sub.run_id is not None and run_state is RunState.UNVERIFIED
                   and self.store.run(sub.run_id).detail.startswith("shadow run:"))
         if passed:
             for target in (RecipeState.TESTED, RecipeState.SHADOW_QUALIFIED, RecipeState.AWAITING_APPROVAL):
@@ -240,6 +244,14 @@ class Capalis:
                           "unavailable)"
                           if passed else "Fix the problems above and compile a new version.")
         return report
+
+    def _settle(self, run_id: str, timeout_s: float = 30.0) -> RunState:
+        end = time.monotonic() + timeout_s
+        state = self.store.run(run_id).state
+        while state in (RunState.QUEUED, RunState.RUNNING) and time.monotonic() < end:
+            time.sleep(0.05)
+            state = self.store.run(run_id).state
+        return state
 
     def run_manual(self, recipe_id: str, payload: Mapping[str, Any], *, sender: str) -> dict[str, Any]:
         recipe, _ = self._latest(recipe_id)

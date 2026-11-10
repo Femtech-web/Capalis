@@ -116,6 +116,28 @@ def test_bad_draft_reports_problems_and_stores_nothing(env: Env) -> None:
     assert env.tool("capalis_recipe", action="list") == []
 
 
+def test_qualify_waits_when_the_background_worker_runs_the_practice_run(env: Env) -> None:
+    import threading
+
+    runner = env.service.runner
+    real_submit = runner.submit
+    workers: list[threading.Timer] = []
+
+    def worker_wins(*args: Any, **kwargs: Any) -> Any:
+        # As in CI: the worker claims the queued run before qualify can, so submit comes back unfinished.
+        sub = real_submit(*args, **{**kwargs, "advance": False})
+        workers.append(threading.Timer(0.2, runner.advance, args=(sub.run_id,)))
+        workers[-1].start()
+        return sub
+
+    runner.submit = worker_wins  # type: ignore[method-assign]
+    try:
+        assert qualified(env)
+    finally:
+        for worker in workers:
+            worker.join()
+
+
 def test_recompiling_is_idempotent_and_a_new_version_does_not_displace_the_live_one(env: Env) -> None:
     digest = qualified(env)
     env.slash(f"approve bug-reports {digest}")
