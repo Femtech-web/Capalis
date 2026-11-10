@@ -1,0 +1,46 @@
+name: capalis
+version: "0.1.0"
+manifest_version: 2
+description: >-
+  Capability intelligence and Verified Recipes: compare capabilities for a goal, compile a scoped,
+  versioned Recipe, run it under explicit approval, verify outcomes independently, and quarantine it
+  when its dependencies drift.
+author: Capalis contributors
+license: MIT
+requires_hermes: ">=0.23.0"
+tags: [workflows, verification, automation, safety]
+provides_tools:
+  - capalis_status
+  - capalis_setup
+  - capalis_capabilities
+  - capalis_recipe
+  - capalis_run
+  - capalis_pause
+provides_hooks:
+  - pre_gateway_dispatch
+config_schema:
+  approvers:
+    type: list
+    default: []
+    label: "Approvers"
+    description: "Chat users who may approve, resume or revoke Recipes, as platform:user_id (e.g. telegram:12345). Local CLI, TUI and Desktop sessions can always approve."
+  github_token:
+    type: secret
+    env: CAPALIS_GITHUB_TOKEN
+    label: "GitHub token"
+    description: "Fine-grained token with Issues read/write on the repositories your Recipes use."
+  slack_bot_token:
+    type: secret
+    env: CAPALIS_SLACK_BOT_TOKEN
+    label: "Slack bot token"
+    description: "Bot token with chat:write and channels:history; invite the bot to the channels your Recipes post to."
+  discord_bot_token:
+    type: secret
+    env: CAPALIS_DISCORD_BOT_TOKEN
+    label: "Discord bot token"
+    description: "For Recipes that reply in Discord; the bot needs View Channel, Send Messages and Read Message History."
+  slack_webhook_url:
+    type: secret
+    env: CAPALIS_SLACK_WEBHOOK_URL
+    label: "Slack incoming webhook URL"
+    description: "Optional. Posts through a webhook cannot be read back, so Capalis treats them as unverifiable."

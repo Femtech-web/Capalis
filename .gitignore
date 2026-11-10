@@ -1,0 +1,25 @@
+# Private development workspace: never committed
+/private-notes/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local development tooling and pinned Hermes test install
+/.dev/
+/.venv/

@@ -1,0 +1,165 @@
+{
+  "date": "2026-11-10",
+  "hermes": "v0.23.0 (2bd378ed)",
+  "python": "3.13.9",
+  "totals": {
+    "passed": 275,
+    "failed": 0,
+    "skipped": 1
+  },
+  "claims": [
+    {
+      "claim": "Targets are fixed when a Recipe is compiled; report text cannot redirect a write.",
+      "how": "Hostile payloads (generated and hand-written) never change the graph, the repository or the channel.",
+      "tests": {
+        "test_compiler.py::test_compiler_rejects": "passed",
+        "test_compiler.py::test_template_inputs_are_typed_as_text_and_targets_stay_constant": "passed",
+        "test_core_properties.py::test_runtime_data_never_changes_operations_or_targets": "passed",
+        "test_runner.py::test_hostile_report_text_cannot_redirect_effects": "passed",
+        "test_adapters.py::test_search_quotes_the_phrase_and_keeps_to_the_target_repo": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Shadow runs write nothing.",
+      "how": "Reads are real; every write is simulated, and the fake providers record zero write calls.",
+      "tests": {
+        "test_runner.py::test_shadow_run_writes_nothing": "passed",
+        "test_service.py::test_events_before_approval_run_in_shadow": "passed",
+        "test_service.py::test_compile_qualify_approve_then_live_intake": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Nothing writes until the owner approves that exact version, and the model cannot approve.",
+      "how": "Approval is a slash command checked against the sender's id and the version digest; no model tool can approve, resume, revoke, confirm or resolve.",
+      "tests": {
+        "test_plugin_registration.py::test_model_tools_cannot_approve_resume_or_confirm": "passed",
+        "test_service.py::test_compile_qualify_approve_then_live_intake": "passed",
+        "test_runner.py::test_shadow_runs_before_approval_but_live_runs_do_not": "passed",
+        "test_core_properties.py::test_live_authorization_implies_full_grant_coverage": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "A duplicate trigger never creates a second issue.",
+      "how": "Same message delivered twice, or eight times concurrently: one run, one write.",
+      "tests": {
+        "test_runner.py::test_duplicate_trigger_creates_no_second_issue": "passed",
+        "test_storage.py::test_concurrent_duplicate_deliveries_create_one_run": "passed",
+        "test_runner.py::test_concurrent_advance_dispatches_once": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "An uncertain write is reconciled, never blindly repeated.",
+      "how": "Crashes after dispatch, timeouts after sending and lagging provider lists all end with exactly one effect, or stop for the owner when the effect cannot be checked.",
+      "tests": {
+        "test_runner.py::test_crash_after_dispatch_recovers_without_a_second_write": "passed",
+        "test_runner.py::test_crash_between_intent_and_dispatch_sends_exactly_once": "passed",
+        "test_runner.py::test_ambiguous_write_that_landed_is_reconciled_not_repeated": "passed",
+        "test_runner.py::test_ambiguous_write_that_did_not_land_is_retried_only_when_allowed": "passed",
+        "test_runner.py::test_unreconcilable_unknown_effect_stops_for_an_operator": "passed",
+        "test_runner.py::test_failed_lookup_parks_for_reconciliation_and_retries_the_lookup_later": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "A tool saying it succeeded is not verification.",
+      "how": "An independent read-back must agree; a false success is caught and an unobservable write is never reported verified.",
+      "tests": {
+        "test_runner.py::test_false_success_is_caught_by_the_independent_check": "passed",
+        "test_runner.py::test_unobservable_write_is_unverified_never_verified": "passed",
+        "test_runner.py::test_malformed_success_is_treated_as_unknown_and_reconciled": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Changed dependencies block writes and quarantine the Recipe.",
+      "how": "Any pin change (schema, version, auth, trust, availability) before a write blocks it, quarantines the Recipe and stops shadow runs; a changed checker cannot produce evidence.",
+      "tests": {
+        "test_runner.py::test_drift_before_a_write_blocks_it_and_quarantines": "passed",
+        "test_runner.py::test_changed_checker_cannot_produce_evidence": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Pause, revocation and budgets take effect before the next write.",
+      "how": "Checked again immediately before every write, not just when a run starts.",
+      "tests": {
+        "test_runner.py::test_global_pause_holds_a_run_and_resume_continues_it": "passed",
+        "test_runner.py::test_revoked_approval_blocks_the_next_write": "passed",
+        "test_runner.py::test_write_budget_counts_retried_attempts": "passed",
+        "test_service.py::test_model_can_pause_but_only_the_owner_can_resume": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Credentials never reach Capalis's storage.",
+      "how": "A canary secret and provider token shapes are absent from the database and WAL bytes after a full run.",
+      "tests": {
+        "test_storage.py::test_canary_secret_never_reaches_disk": "passed",
+        "test_wire_and_redact.py::test_credential_formats_are_masked": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "It keeps working after the first write: it waits for the fix, then tells the reporter.",
+      "how": "The run parks until the issue is closed, then replies to the reporter's Discord message and reads the reply back; an uncertain reply is found by its text rather than sent twice.",
+      "tests": {
+        "test_service.py::test_reporter_hears_back_when_the_issue_is_closed": "passed",
+        "test_service.py::test_ambiguous_discord_reply_is_found_by_its_text_not_resent": "passed",
+        "test_adapters.py::test_discord_lookup_matches_only_this_bots_reply_with_the_same_text": "passed"
+      },
+      "holds": true
+    },
+    {
+      "claim": "Runs survive restarts.",
+      "how": "Parked waits, re-checks and interrupted runs resume from the store with the same decisions.",
+      "tests": {
+        "test_runner.py::test_durable_wait_survives_restart_and_completes": "passed",
+        "test_storage.py::test_restart_reloads_the_exact_compiled_recipe": "passed"
+      },
+      "holds": true
+    }
+  ],
+  "live_run": {
+    "recorded_at": "2026-11-10T08:27:18Z",
+    "recipe_digest": "sha256:4274ef74011ad8584bf3657e20b11a5fb3f41027e151786f7d032dc27d51b7d1",
+    "run_state": "verified",
+    "issue_url": "https://github.com/oluwafemi-akolade/capalis-sandbox/issues/2",
+    "slack_message_ts": "1794299232.385689",
+    "independent_checks": [
+      {
+        "check": "issue_readback",
+        "level": "V1",
+        "status": "met",
+        "target": "github.repo:oluwafemi-akolade/capalis-sandbox"
+      },
+      {
+        "check": "message_readback",
+        "level": "V1",
+        "status": "met",
+        "target": "slack.channel:C0CFU6F0MNK"
+      }
+    ],
+    "event_kinds": [
+      "run.started",
+      "run.state",
+      "step.intent",
+      "step.state",
+      "step.intent",
+      "step.state",
+      "step.state",
+      "verify.observed",
+      "step.state",
+      "step.intent",
+      "step.state",
+      "step.state",
+      "verify.observed",
+      "step.state",
+      "run.state",
+      "run.duplicate"
+    ]
+  }
+}

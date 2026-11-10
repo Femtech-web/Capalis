@@ -1,0 +1,27 @@
+# Draft entry for plugin-catalog/capalis.yaml in NousResearch/hermes-agent.
+# Before opening the PR: set repo, pin sha to the full 40-character commit you push, and set maintainer.
+name: capalis
+repo: https://github.com/<owner>/<repo>
+sha: <40-character commit sha>
+subdir: plugin
+description: >-
+  Capability intelligence and Verified Recipes. Compare capabilities for a goal, compile a scoped,
+  versioned Recipe (e.g. Discord bug report -> GitHub issue -> Slack notice), shadow-run it, run it only
+  after the owner approves that exact version with /capalis approve, verify every write by independent
+  read-back, never blindly retry an uncertain write, and quarantine the Recipe when a dependency changes.
+  Disclosure: calls api.github.com, slack.com and discord.com (and a Slack webhook if configured) with the user's
+  tokens, and credential-free HTTPS GETs to origins an approved Recipe names; stores Recipes, approvals
+  and redacted run records in plugin-data/capalis/; consumes chat messages in channels a Recipe listens
+  to (via pre_gateway_dispatch); runs a daemon thread in the gateway that advances runs every 30 s. No
+  shell commands, subprocesses, telemetry or self-updating.
+maintainer: <github username>
+tier: community
+category: automation
+docs_url: https://github.com/<owner>/<repo>#readme
+version: "0.1.0"
+platforms: []
+capabilities:
+  provides_tools: [capalis_status, capalis_setup, capalis_capabilities, capalis_recipe, capalis_run, capalis_pause]
+  provides_hooks: [pre_gateway_dispatch]
+  provides_middleware: []
+  requires_env: []
