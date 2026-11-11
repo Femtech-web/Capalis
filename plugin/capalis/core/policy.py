@@ -124,7 +124,8 @@ def authorize_step(recipe: RecipeSpec, step: StepSpec, ctx: StepContext) -> Deci
     if ctx.mode is Mode.SHADOW:
         if ctx.recipe_state not in SHADOW_RUNNABLE:
             return _deny("state", f"a {ctx.recipe_state.value} Recipe cannot run, even in shadow mode")
-        return Decision(True, "ok", "shadow", simulate=step.is_side_effect)
+        # An unapproved Recipe never calls another Hermes tool: its inputs were chosen by the model.
+        return Decision(True, "ok", "shadow", simulate=step.is_side_effect or step.capability_id.startswith("hermes:"))
     if ctx.global_paused:
         return _deny("global_pause", "all Capalis Recipes are paused")
     if ctx.recipe_state is not RecipeState.LIVE:

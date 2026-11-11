@@ -1,9 +1,12 @@
 """Capability contracts: how another Hermes tool (built-in or from another plugin) becomes usable in Recipes.
 
-A contract states what a tool takes, what it returns and that it only reads. It is untrusted until the
-owner has seen a passing contract test and approved it (FR-REG-05, D-014): only then does its effect count.
-Contracts that change things are refused for now, because a write needs a sandbox test and a read-back the
-owner can rely on.
+A contract states what a tool takes and what it returns. It is untrusted until the owner has seen a passing
+contract test and approved it (FR-REG-05, D-014).
+
+Whether a tool only reads can't rest on the contract's own word, since the model writes it. So only tools on
+``READ_TOOLS`` can be contracted: Hermes's own list of tools that are safe on untrusted input
+(``toolsets._HERMES_WEBHOOK_SAFE_TOOLS``), minus ``clarify``, which waits for a person, and ``vision_analyze``,
+which can read local files. Both remaining tools refuse private and internal URLs themselves (D-044).
 """
 
 from __future__ import annotations
@@ -17,8 +20,8 @@ from . import schema as jsonschema
 from .canonical import digest
 from .model import Availability, CapabilityDescriptor, Effect, TargetSpec, Trust
 
+READ_TOOLS = frozenset({"web_search", "web_extract"})
 TOOL_NAME = re.compile(r"[a-z][a-z0-9_]{1,63}")
-PLUGIN_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}")
 OPERATION = re.compile(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+")
 _KEYS = frozenset({"tool", "plugin", "summary", "operation", "effect", "input_schema", "output_schema",
                    "output_format", "target", "sample_inputs"})
@@ -74,9 +77,12 @@ def parse_contract(raw: Any) -> tuple[ContractSpec | None, list[str]]:
     problems = [f"unknown field {key!r}" for key in sorted(set(raw) - _KEYS)]
     tool, plugin = raw.get("tool"), raw.get("plugin")
     if not isinstance(tool, str) or not TOOL_NAME.fullmatch(tool):
-        problems.append("tool must be the Hermes tool name, e.g. read_file")
-    if plugin is not None and (not isinstance(plugin, str) or not PLUGIN_NAME.fullmatch(plugin)):
-        problems.append("plugin must be the providing plugin's name, or omitted for built-in tools")
+        problems.append("tool must be the Hermes tool name, e.g. web_search")
+    elif tool not in READ_TOOLS:
+        problems.append(f"{tool} can't be contracted: only Hermes's built-in read tools "
+                        f"({', '.join(sorted(READ_TOOLS))}) are accepted, because nothing else proves it only reads")
+    if plugin is not None:
+        problems.append("tools from other plugins can't be contracted yet: nothing proves they only read")
     if raw.get("effect", "read") != "read":
         problems.append("only tools that read can be contracted for now; a tool that changes things needs a "
                         "sandbox contract test and an independent read-back first")

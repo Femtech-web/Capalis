@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import json
 import sqlite3
 import time
@@ -10,11 +11,12 @@ from typing import Any
 import pytest
 
 from capalis.adapters import surfaces
+from capalis.adapters.net_safety import check_origin
 from capalis.core.lifecycle import RecipeState, RunState
 from capalis.core.redact import Redactor
 from capalis.service import Actor, Capalis, ServiceError
 from capalis.storage.db import Store
-from fakes import World, adapters
+from fakes import World, adapters, resolve
 from support import DISCORD, REPO, REPORTER, SLACK
 
 LOCAL = Actor("cli", None)
@@ -28,7 +30,8 @@ class Env:
         self.world = World()
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.store = Store(self.conn, redactor=Redactor())
-        self.service = Capalis(self.store, adapters(self.world), approvers=lambda: ["telegram:1001"])
+        self.service = Capalis(self.store, adapters(self.world), approvers=lambda: ["telegram:1001"],
+                               check_origin=functools.partial(check_origin, resolve=resolve))
         self.tools = surfaces.handlers(lambda: self.service)
         self.command = surfaces.command(lambda: self.service)
 
@@ -596,14 +599,21 @@ def test_evidence_bundle_is_written_for_reviewers(env: Env, tmp_path: Path) -> N
     assert "VERIFIED" in (tmp_path / "exports" / f"evidence-{sub.run_id[:8]}.md").read_text()
 
 
-READ_FILE_CONTRACT = {
-    "tool": "read_file", "summary": "Read a text file from the workspace", "operation": "file.read",
-    "input_schema": {"type": "object", "additionalProperties": False, "required": ["path"],
-                     "properties": {"path": {"type": "string"}}},
+WEB_CONTRACT = {
+    "tool": "web_extract", "summary": "Read the text of a public web page", "operation": "web.read",
+    "input_schema": {"type": "object", "additionalProperties": False, "required": ["url"],
+                     "properties": {"url": {"type": "string"}}},
     "output_schema": {"type": "object", "required": ["content"],
                       "properties": {"content": {"type": "string"}, "total_lines": {"type": "integer"}}},
-    "sample_inputs": {"path": "CHANGELOG.md"},
+    "sample_inputs": {"url": "https://example.com/CHANGELOG.md"},
 }
+
+
+def contract_test(env: Env, capability_id: str = "hermes:web_extract") -> dict[str, Any]:
+    """The owner sees the exact inputs first, then runs the test bound to the contract version shown."""
+    shown = env.slash(f"contract test {capability_id}")
+    command = shown.rsplit("send: ", 1)[1]
+    return dict(json.loads(env.slash(command.removeprefix("/capalis "))))
 
 
 def _manual_digest_recipe(env: Env, recipe_id: str = "changelog-digest") -> dict[str, Any]:
@@ -611,7 +621,8 @@ def _manual_digest_recipe(env: Env, recipe_id: str = "changelog-digest") -> dict
         "intent": "Post the changelog's first line to engineering",
         "trigger": {"kind": "manual"},
         "steps": [
-            {"id": "read", "capability": "hermes:read_file", "inputs": {"path": {"const": "CHANGELOG.md"}}},
+            {"id": "read", "capability": "hermes:web_extract",
+             "inputs": {"url": {"const": "https://example.com/CHANGELOG.md"}}},
             {"id": "post", "capability": "capalis:slack.message.post",
              "inputs": {"channel": {"const": SLACK}, "text": {"template": "Changelog: {steps.read.content}"}},
              "verify": [{"id": "post_readback", "probe": "capalis:slack.message.get",
@@ -632,51 +643,88 @@ def test_another_hermes_tool_runs_only_after_a_passing_test_and_owner_approval(e
         return json.dumps({"content": "1|# Changelog v0.1.0", "total_lines": 1})
 
     env.service.dispatch = dispatch
-    writer = dict(READ_FILE_CONTRACT, tool="write_file", effect="external_write")
-    refused = env.tool("capalis_contract", action="propose", contract=writer)
-    assert "only tools that read" in " ".join(refused["problems"])
+    for tool in ("terminal", "execute_code", "write_file", "read_file", "send_message", "cronjob",
+                 "delegate_task", "vision_analyze", "clarify"):
+        refused = env.tool("capalis_contract", action="propose", contract=dict(WEB_CONTRACT, tool=tool))
+        assert not refused["ok"] and f"{tool} can't be contracted" in " ".join(refused["problems"]), tool
+    from_plugin = env.tool("capalis_contract", action="propose", contract=dict(WEB_CONTRACT, plugin="other-plugin"))
+    assert "other plugins can't be contracted" in " ".join(from_plugin["problems"])
+    writer = env.tool("capalis_contract", action="propose", contract=dict(WEB_CONTRACT, effect="external_write"))
+    assert "only tools that read" in " ".join(writer["problems"])
 
-    proposed = env.tool("capalis_contract", action="propose", contract=READ_FILE_CONTRACT)
+    proposed = env.tool("capalis_contract", action="propose", contract=WEB_CONTRACT)
     assert proposed["ok"] and proposed["state"] == "proposed" and calls == []
     assert "E_UNKNOWN_CAPABILITY" in {p["code"] for p in _manual_digest_recipe(env)["problems"]}, \
         "a proposed contract is not runnable"
-    assert "only a passing test" in env.slash("contract approve hermes:read_file")
-    assert "not an approver" in env.slash("contract test hermes:read_file", STRANGER)
+    assert "only a passing test" in env.slash("contract approve hermes:web_extract")
+    assert "not an approver" in env.slash("contract test hermes:web_extract", STRANGER)
 
-    tested = json.loads(env.slash("contract test hermes:read_file"))
-    assert tested["passed"] and calls == [("read_file", {"path": "CHANGELOG.md"})]
-    assert "can now be used in Recipes" in env.slash("contract approve hermes:read_file")
+    shown = env.slash("contract test hermes:web_extract")
+    assert '"url": "https://example.com/CHANGELOG.md"' in shown and calls == [], "the owner sees the inputs first"
+    assert "changed since you saw it" in env.slash("contract test hermes:web_extract 000000000000")
+    tested = contract_test(env)
+    assert tested["passed"] and calls == [("web_extract", {"url": "https://example.com/CHANGELOG.md"})]
+    assert "can now be used in Recipes" in env.slash("contract approve hermes:web_extract")
 
     compiled = _manual_digest_recipe(env)
     assert compiled["ok"], compiled
-    env.tool("capalis_recipe", action="qualify", recipe_id="changelog-digest", sample_payload={})
+    qualified_run = env.tool("capalis_recipe", action="qualify", recipe_id="changelog-digest", sample_payload={})
+    assert qualified_run["qualified"] and len(calls) == 1, "a practice run never calls another Hermes tool"
+    read = next(s for s in qualified_run["run"]["steps"] if s["step"] == "read")
+    assert read["state"] == "simulated" and read["detail"] == "shadow run: Hermes tool not called before approval"
+    assert "1 Hermes tool call(s) simulated" in qualified_run["run"]["detail"]
     env.slash(f"approve changelog-digest {compiled['short_digest']}")
     started = env.tool("capalis_run", action="start", recipe_id="changelog-digest", payload={})
     assert started["run"]["state"] == "verified", started
     assert "Changelog: 1|# Changelog v0.1.0" in env.world.messages[SLACK][-1]["text"]
 
-    assert "quarantined" in env.slash("contract revoke hermes:read_file")
+    assert "quarantined" in env.slash("contract revoke hermes:web_extract")
     assert env.store.latest("changelog-digest")[1].value == "quarantined"  # type: ignore[index]
 
 
 def test_a_changed_contract_must_be_tested_and_approved_again(env: Env) -> None:
     env.service.dispatch = lambda tool, args: json.dumps({"content": "x"})
-    env.tool("capalis_contract", action="propose", contract=READ_FILE_CONTRACT)
-    env.slash("contract test hermes:read_file")
-    env.slash("contract approve hermes:read_file")
-    assert "hermes:read_file" in env.service.adapters
-    env.tool("capalis_contract", action="propose", contract=dict(READ_FILE_CONTRACT, summary="Read any file at all"))
+    env.tool("capalis_contract", action="propose", contract=WEB_CONTRACT)
+    contract_test(env)
+    env.slash("contract approve hermes:web_extract")
+    assert "hermes:web_extract" in env.service.adapters
+    env.tool("capalis_contract", action="propose", contract=dict(WEB_CONTRACT, summary="Read any page at all"))
     assert env.service.contracts()[0]["state"] == "proposed"
     env.service._load_contracts()
-    assert "hermes:read_file" not in env.service.adapters
+    assert "hermes:web_extract" not in env.service.adapters
 
 
 def test_a_failing_contract_test_cannot_be_approved(env: Env) -> None:
-    env.service.dispatch = lambda tool, args: json.dumps({"error": "File not found"})
-    env.tool("capalis_contract", action="propose", contract=READ_FILE_CONTRACT)
-    result = json.loads(env.slash("contract test hermes:read_file"))
-    assert not result["passed"] and "File not found" in result["problems"][0]
-    assert "only a passing test" in env.slash("contract approve hermes:read_file")
+    env.service.dispatch = lambda tool, args: json.dumps({"error": "Page not found"})
+    env.tool("capalis_contract", action="propose", contract=WEB_CONTRACT)
+    result = contract_test(env)
+    assert not result["passed"] and "Page not found" in result["problems"][0]
+    assert "only a passing test" in env.slash("contract approve hermes:web_extract")
+
+
+def test_a_contract_test_shows_its_inputs_and_runs_only_on_confirmation(env: Env) -> None:
+    calls: list[str] = []
+    env.service.dispatch = lambda tool, args: calls.append(tool) or json.dumps({"content": "x"})
+    env.tool("capalis_contract", action="propose", contract=WEB_CONTRACT)
+    asked: list[str] = []
+    no = surfaces.command(lambda: env.service, ask=lambda q, c: asked.append(q) or "cancel")
+    assert no("contract test hermes:web_extract", platform="cli") == "Not run. Nothing was called."
+    assert "calls web_extract once with" in asked[0] and "https://example.com/CHANGELOG.md" in asked[0]
+    yes = surfaces.command(lambda: env.service, ask=lambda q, c: "run")
+    assert json.loads(yes("contract test hermes:web_extract", platform="cli"))["passed"] and calls == ["web_extract"]
+
+
+def test_web_checks_refuse_internal_addresses_when_compiled(env: Env) -> None:
+    from fakes import FakeDirectory
+
+    env.service.directory = FakeDirectory(REPO, SLACK, DISCORD, REPORTER)
+    for url in ("https://localhost/health", "https://169.254.169.254/latest/meta-data", "https://10.0.0.5/",
+                "https://intranet.example/", "https://metadata.google.internal/"):
+        draft = env.tool("capalis_recipe", action="template", template="site_watch", url=url,
+                         slack_channel="#engineering", every_minutes=10)["draft"]
+        out = env.tool("capalis_recipe", action="compile", recipe_id="watch-internal", draft=draft)
+        assert not out["ok"] and {p["code"] for p in out["problems"]} == {"E_PRIVATE_ORIGIN"}, (url, out)
+    assert env.tool("capalis_recipe", action="list") == []
 
 
 

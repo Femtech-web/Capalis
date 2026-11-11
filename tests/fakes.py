@@ -6,6 +6,8 @@ exchanges and real accounts, never against these.
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -234,3 +236,19 @@ class FakeDirectory:
         if name.lstrip("@") not in ("ada", self.reporter):
             raise ResolveError(f"could not find {name} in #bugs")
         return self.resolved(self.reporter, "@ada")
+
+
+PUBLIC_HOSTS = {"shop.example.com": "93.184.216.34", "evil.test": "93.184.216.35", "example.com": "93.184.216.34"}
+
+
+def resolve(host: str, port: int, *_: Any, **__: Any) -> list[tuple[Any, ...]]:
+    """A DNS stand-in, so no test touches the network: known names, private names, and IP literals."""
+    private = {"intranet.example": "10.0.0.7", "rebind.example": "127.0.0.1"}
+    address = PUBLIC_HOSTS.get(host) or private.get(host)
+    if address is None:
+        try:
+            address = str(ipaddress.ip_address(host))
+        except ValueError:
+            raise socket.gaierror(f"{host} not found") from None
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+    return [(family, socket.SOCK_STREAM, 6, "", (address, port))]

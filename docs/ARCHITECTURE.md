@@ -120,7 +120,8 @@ A disagreement (`not_met`) fails the step at once and blocks its dependents. Pro
 
 - **Schedules.** A pure cron (`core/cron.py`, UTC). The worker fires live schedule Recipes. Each slot's minute is its dedupe value, so it fires once across workers and restarts; counting starts at approval, and after downtime only the latest missed slot fires.
 - **Owner alerts.** A cursor over the event log turns events that need a person into one message each, posted to the owner's chosen channel. The cursor advances only after delivery and starts at "now" when alerts are enabled.
-- **Other Hermes tools** (`core/contracts.py`, `adapters/hermes_tools.py`). An owner-approved, read-only capability contract turns a Hermes tool into a `hermes:<tool>` capability, called through `ctx.dispatch_tool`. A proposal is inert, the test is a real call checked against the declared schema, and approval is an owner command. Any change returns the contract to "proposed".
+- **Other Hermes tools** (`core/contracts.py`, `adapters/hermes_tools.py`). An owner-approved capability contract turns one of Hermes's own read tools (`web_search`, `web_extract`: the `READ_TOOLS` allowlist) into a `hermes:<tool>` capability, called through `ctx.dispatch_tool`. A proposal is inert. The test shows its exact inputs and runs only when the owner confirms that contract version. Approval is an owner command, practice runs simulate the call, and any change returns the contract to "proposed".
+- **Public addresses only** (`adapters/net_safety.py`). The credential-free web read refuses private, loopback, link-local, carrier-grade NAT, reserved and multicast addresses at compile time, before each request, and at connect time, where it connects only to the checked address and ignores proxies.
 - **Versions.** `core/diff.py` explains what changed since the previous version. That diff appears in `show`, in compile results and in the approval summary.
 - **Export and import.** Evidence bundles (Markdown and JSON). Recipes travel as `capalis-recipe/1` with their digest: an import is verified, rebuilt from the wire form against the importer's capabilities, and starts unapproved.
 
@@ -142,7 +143,7 @@ A disagreement (`not_met`) fails the step at once and blocks its dependents. Pro
 | Surface | Used for | Source in v0.23.0 |
 | --- | --- | --- |
 | `ctx.register_tool` | 7 model tools (deferred, loaded through Tool Search) | `hermes_cli/plugins.py` |
-| `ctx.dispatch_tool`, `ctx.has_plugin` | Running another Hermes tool under an approved read-only contract | `hermes_cli/plugins.py` |
+| `ctx.dispatch_tool`, `ctx.has_plugin` | Running `web_search` or `web_extract` under an approved contract | `hermes_cli/plugins.py` |
 | `ctx.register_command` + `ask_choice` | `/capalis` and its Approve / Not now buttons | `hermes_cli/plugins.py`, `hermes_cli/plugin_choices.py` |
 | `pre_gateway_dispatch` hook | Messages in a Recipe's channel become triggers | `website/docs/user-guide/features/hooks.md` |
 | `plugins.plugin_storage.plugin_db` | The SQLite file under `plugin-data/capalis/` | `plugins/plugin_storage.py` |

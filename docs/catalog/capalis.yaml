@@ -15,7 +15,7 @@ tier: community
 category: automation
 requires_hermes: ">=0.23.0"
 docs_url: https://github.com/Femtech-web/Capalis#readme
-version: "0.2.0"
+version: "0.2.1"
 image: https://raw.githubusercontent.com/Femtech-web/Capalis/SHA_TO_PIN/docs/assets/banner.png
 screenshots:
   - https://raw.githubusercontent.com/Femtech-web/Capalis/SHA_TO_PIN/docs/assets/telegram-approval-request.png

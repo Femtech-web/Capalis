@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import socket
 from dataclasses import dataclass
 
 from ..core.model import CapabilityDescriptor
 from ..runtime.ports import Invocation, InvokeResult, Outcome
 from .catalog import BY_ID
 from .http import Transport, TransportError, failure
+from .net_safety import Resolver, check_origin
 
 MAX_TEXT = 16_000
 
@@ -16,6 +18,7 @@ MAX_TEXT = 16_000
 class HttpGetAdapter:
     transport: Transport
     capability_id: str = "capalis:http.get"
+    resolve: Resolver = socket.getaddrinfo
 
     @property
     def descriptor(self) -> CapabilityDescriptor:
@@ -25,10 +28,15 @@ class HttpGetAdapter:
         origin, path = call.inputs["origin"], call.inputs["path"]
         if call.target is None or call.target.value != origin or not path.startswith("/") or path.startswith("//"):
             return InvokeResult(Outcome.REJECTED, error="the request does not stay on the approved origin")
+        unsafe = check_origin(origin, self.resolve)
+        if unsafe is not None:
+            return InvokeResult(Outcome.REJECTED, error=f"{unsafe}; Capalis only reads public addresses")
         try:
             response = self.transport.send("GET", origin + path, {"Accept": "text/plain, application/json, */*"},
                                            None, call.timeout_s)
         except TransportError as exc:
+            if exc.refused:
+                return InvokeResult(Outcome.REJECTED, error=f"{exc}; Capalis only reads public addresses")
             return failure(exc, write=False)
         # Any HTTP status is an observation here; a wait or check decides what it means.
         text = response.body[:MAX_TEXT].decode("utf-8", errors="replace")

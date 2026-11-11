@@ -16,7 +16,7 @@ Their text fills slots in the issue and the messages; nothing more. Where Capali
 Capalis records each write before sending it. If it can't tell whether the write landed, it looks it up by a hidden key. GitHub, Slack and Discord each have one: a marker, message metadata, or the reply itself. It retries only once a settle window has passed and the write still isn't there. If the service offers no way to look it up, Capalis stops and asks you.
 
 **Does it work with tools from other plugins?**
-Yes, for tools that read. The model proposes a *capability contract*, you run `/capalis contract test` (one real call through Hermes), and then `/capalis contract approve`. After that, the tool can be a step in a Recipe or an independent check on another service's write. Tools that change things are refused for now: they need a sandbox test and an independent read-back first ([roadmap](ROADMAP.md)).
+Not yet. Two of Hermes's own read tools can join a Recipe: `web_search` and `web_extract`. The model proposes a *capability contract*, you run `/capalis contract test` (it shows the exact inputs, then makes one real call through Hermes when you confirm), and then `/capalis contract approve`. Practice runs never call them. Other tools, including other plugins' tools, are refused: a contract is written by the model, so it can't prove a tool only reads. A trustworthy way to accept them is on the [roadmap](ROADMAP.md).
 
 **Can it run on a schedule?**
 Yes: "every weekday at 9" or "every 10 minutes", in UTC. Each slot runs once, even across restarts. After downtime, only the latest missed slot runs. Schedules need the Hermes gateway running.

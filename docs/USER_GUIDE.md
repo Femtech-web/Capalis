@@ -175,13 +175,13 @@ Ask a teammate to post a bug in #bugs. Within seconds:
 
 ## Using other Hermes tools
 
-Capalis's own connections cover GitHub, Slack, Discord and web pages. Another Hermes tool (built-in, or from another plugin you've installed) can take part as a read step or an extra check:
+Capalis's own connections cover GitHub, Slack, Discord and web pages. Hermes's own web search and page reader can take part too, as a read step or an extra check:
 
-1. Ask Hermes: "Propose a Capalis contract for the read_file tool."
-2. `/capalis contract test hermes:read_file` calls it once and shows you what it returned.
-3. `/capalis contract approve hermes:read_file` lets Recipes use it. `/capalis contract revoke …` stops it, and quarantines the Recipes that use it.
+1. Ask Hermes: "Propose a Capalis contract for the web_extract tool."
+2. `/capalis contract test hermes:web_extract` shows the exact inputs it will use. Tap **Run the test**, or send the command it gives you, and it calls the tool once and shows what came back.
+3. `/capalis contract approve hermes:web_extract` lets Recipes use it. `/capalis contract revoke …` stops it, and quarantines the Recipes that use it.
 
-Only tools that read can be approved this way.
+Only `web_search` and `web_extract` can be contracted. Tools that run commands, write, send or schedule are refused, and so are tools from other plugins, because nothing yet proves they only read. Practice runs never call a contracted tool.
 
 ## Team approvals
 

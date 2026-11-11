@@ -56,4 +56,5 @@ The public digest of the project's decision log. Each line gives the decision an
 | D-037 | Show what changed before approval | Upgrades are never silent. |
 | D-038 | Export and import without approvals | Evidence bundles for reviewers; shareable Recipes that need local approval again, with edited exports refused. |
 | D-039 | Other Hermes tools through owner-approved, read-only contracts | Any plugin's read tool can be a step or an independent check. Writes wait for sandbox contract tests. |
+| D-044 | Security review fixes (0.2.1): public addresses only; a fixed list of contractable tools | Web checks refuse internal addresses at compile time, before each request and at connect time (pinned to the checked address). Only Hermes's `web_search` and `web_extract` can be contracted, the owner sees a test's inputs first, and practice runs never call a contracted tool. Supersedes D-039's "any plugin's read tool". |
 | D-040 | Close the small PRD gaps | Reliability from your own runs, presentation preference, cancel, and a status that is never stale. |

@@ -19,7 +19,7 @@ Ready-made jobs:
 - bug reports from Discord or Slack, with replies to the reporter;
 - a site watch that checks a page on a schedule and tells Slack when it's down.
 
-You can describe others from the same pieces, including read-only tools from your other Hermes plugins, once you've tested and approved them.
+You can describe others from the same pieces, including Hermes's own web search and page reader, once you've seen a test and approved them.
 
 ## Setup
 
@@ -42,7 +42,7 @@ Step by step, including how to get each token: [owner's guide](https://github.co
 | `/capalis evidence <run>` | Every step of a run, with its checks |
 | `/capalis export <run>` | A Markdown and JSON record for a reviewer |
 | `/capalis pause [recipe]` · `resume` · `revoke <recipe>` · `cancel <run>` | Stop things |
-| `/capalis contract test\|approve\|revoke <tool>` | Bring another Hermes tool in, read-only |
+| `/capalis contract test\|approve\|revoke <tool>` | Bring in Hermes's web search or page reader |
 | `/capalis prefer recommend\|compare\|ask` | How options are presented to you |
 
 The model can propose, practise and pause. Only you can approve, resume, revoke, confirm or resolve.
@@ -52,10 +52,10 @@ The model can propose, practise and pause. Only you can approve, resume, revoke,
 - **Network:**
   - `api.github.com`, `slack.com`, `discord.com` and `api.telegram.org`, with your tokens;
   - a Slack webhook, if you set one;
-  - credential-free HTTPS `GET`s to the pages an approved Recipe names.
+  - credential-free HTTPS `GET`s to the pages an approved Recipe names, at public addresses only. Localhost, private networks and cloud metadata are refused when the Recipe is built, before each request, and when connecting.
 
   There is no telemetry.
-- **Other Hermes tools:** only those whose read-only contract you tested and approved, called through `ctx.dispatch_tool`.
+- **Other Hermes tools:** only `web_search` and `web_extract`, under a contract you tested and approved, called through `ctx.dispatch_tool`. Never during a practice run.
 - **Storage:** one SQLite file in `plugin-data/capalis/`, holding Recipes, approvals, runs and redacted payloads, plus evidence exports in `plugin-data/capalis/exports/`. Credentials are read only through Hermes (`get_secret`). Capalis never reads `.env` or other tools' files.
 - **Messages:** Capalis consumes the messages in channels a Recipe listens to, so the agent doesn't answer them. It sends alerts and approval requests to the Alerts channel you set.
 - **Background work:** a thread in the Hermes gateway advances waiting runs, fires schedules, checks for changes and sends alerts every 30 seconds. No shell commands, subprocesses or self-updating.

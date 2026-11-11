@@ -301,12 +301,13 @@ class Runner:
         if problem is not None:
             mark(StepState.BLOCKED, problem)
             return None
-        # In shadow mode, a step that follows a simulated write would observe something that never happened.
+        # In shadow mode, a step that follows a simulated step would observe something that never happened.
         after_simulated = run.mode is Mode.SHADOW and any(states.get(d) is StepState.SIMULATED for d in step.depends_on)
         if decision.simulate or after_simulated:
             descriptor = self.adapters[step.capability_id].descriptor
-            detail = ("shadow run: write simulated, nothing sent" if decision.simulate
-                      else "shadow run: follows a simulated write, so not run")
+            detail = ("shadow run: follows a simulated step, so not run" if not decision.simulate
+                      else "shadow run: write simulated, nothing sent" if step.is_side_effect
+                      else "shadow run: Hermes tool not called before approval")
             mark(StepState.SIMULATED, detail, output=placeholder(descriptor.output_schema, f"{step.step_id}"))
             return None
         if step.is_side_effect:
@@ -642,11 +643,14 @@ class Runner:
             return
         if run.mode is Mode.SHADOW:
             simulated = set(by_state.get(StepState.SIMULATED, []))
-            simulated_writes = sum(1 for s in recipe.steps if s.step_id in simulated and s.is_side_effect)
-            later = len(simulated) - simulated_writes
+            notes = [attempts[s].detail for s in simulated]
+            simulated_writes = sum(1 for n in notes if n.endswith("nothing sent"))
+            simulated_tools = sum(1 for n in notes if n.endswith("before approval"))
+            later = len(simulated) - simulated_writes - simulated_tools
             self.store.set_run_state(run.run_id, RunState.UNVERIFIED, detail=(
                 f"shadow run: {simulated_writes} write(s) simulated, nothing written"
-                + (f"; {later} later step(s) not run because they follow a simulated write" if later else "")))
+                + (f"; {simulated_tools} Hermes tool call(s) simulated" if simulated_tools else "")
+                + (f"; {later} later step(s) not run because they follow a simulated step" if later else "")))
             return
         writes = [s.step_id for s in recipe.steps if s.is_side_effect and attempts[s.step_id].state in _HAS_OUTPUT]
         unverified = [s for s in writes if attempts[s].state is not StepState.OBSERVED_VERIFIED]

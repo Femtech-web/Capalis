@@ -2,6 +2,22 @@
 
 All notable changes to Capalis. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-11
+
+Fixes from the Hermes plugin catalog review (D-044).
+
+### Security
+- **Web checks only reach public addresses.** A web check's address is written by the model, and practice runs read for real, so an internal page could have been read. Localhost, private networks, link-local addresses (including cloud metadata at 169.254.169.254), carrier-grade NAT, reserved and multicast addresses are now refused three times:
+  - when the Recipe is compiled;
+  - before each request;
+  - at connect time, where the request connects only to the address that was checked and ignores proxy settings, so a DNS answer can't change in between.
+- **Only known read tools can be contracted.** A contract's "read-only" label was the model's own word. Now only Hermes's `web_search` and `web_extract` are accepted: Hermes's own list of tools that are safe with untrusted input, minus `clarify` and `vision_analyze`. Tools that run commands, write, send or schedule are refused, and so are tools from other plugins.
+- **The owner sees a contract test's inputs before it runs.** `/capalis contract test` shows the exact tool and inputs, and calls it only when the owner confirms, bound to the contract version shown.
+- **Practice runs never call a contracted tool.** Those steps are simulated like writes, so an unapproved Recipe can't run a tool with inputs the model picked.
+
+### Upgrading from 0.2.0
+Recipes approved under 0.2.0 are quarantined the first time 0.2.1 starts, because the capabilities they pin changed version. Ask Hermes to rebuild the Recipe, then approve the new version. Contracts for any tool other than `web_search` and `web_extract` stop working.
+
 ## [0.2.0] - 2026-11-10
 
 Your phone, your team's other tools, and more than bug reports.

@@ -44,8 +44,12 @@ class _Available:
         return result
 
 
-def build(secret: SecretReader = hermes_secret, transport: Transport | None = None) -> dict[str, Any]:
+def build(secret: SecretReader = hermes_secret, transport: Transport | None = None,
+          web_transport: Transport | None = None) -> dict[str, Any]:
     transport = transport or UrllibTransport()
+    # Web reads go to model-chosen origins, so the real client only connects to checked public addresses.
+    web_transport = web_transport or (UrllibTransport(public_only=True) if isinstance(transport, UrllibTransport)
+                                      else transport)
     adapters: dict[str, Any] = {}
     for cap in CATALOG:
         if cap.provider == "github":
@@ -57,7 +61,7 @@ def build(secret: SecretReader = hermes_secret, transport: Transport | None = No
         elif cap.provider == "telegram":
             inner = TelegramAdapter(transport, secret)
         else:
-            inner = HttpGetAdapter(transport)
+            inner = HttpGetAdapter(web_transport)
         adapters[cap.id] = _Available(inner, secret)
     return adapters
 

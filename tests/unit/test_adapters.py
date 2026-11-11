@@ -188,8 +188,10 @@ def test_webhook_only_posts_to_slack_hooks() -> None:
 
 
 def test_http_get_stays_on_the_approved_origin() -> None:
+    from fakes import resolve
+
     script = Script([Response(200, {}, b"v1.2.3")])
-    adapter = HttpGetAdapter(script)
+    adapter = HttpGetAdapter(script, resolve=resolve)
     origin = Target("http.origin", "https://shop.example.com")
     ok = adapter.invoke(call(adapter.capability_id, {"origin": origin.value, "path": "/version"}, target=origin))
     assert ok.output == {"status": 200, "body_text": "v1.2.3"}

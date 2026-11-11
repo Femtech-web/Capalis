@@ -115,12 +115,12 @@ SETUP_SCHEMA: dict[str, Any] = {
 CONTRACT_SCHEMA: dict[str, Any] = {
     "name": "capalis_contract",
     "description": (
-        "Let Capalis use another Hermes tool (built-in or from another plugin) inside Recipes, as a read step or "
-        "an independent check. 'propose' records a capability contract for a tool you can see: its Hermes tool "
-        "name, the plugin providing it (omit for built-ins), a summary, a dotted operation name, input_schema, "
-        "output_schema (or output_format text), and sample_inputs for a test call. Only tools that read are "
-        "accepted. A proposal is untrusted: the owner must run /capalis contract test <id> and then "
-        "/capalis contract approve <id> before any Recipe can use it. 'list' shows contracts and their state."),
+        "Let Capalis use one of Hermes's built-in read tools (web_search or web_extract) inside Recipes, as a read "
+        "step or an independent check. No other tool, and no tool from another plugin, is accepted. 'propose' "
+        "records a capability contract: the Hermes tool name, a summary, a dotted operation name, input_schema, "
+        "output_schema (or output_format text), and sample_inputs for a test call. A proposal is untrusted: the "
+        "owner runs /capalis contract test <id>, sees the exact inputs before anything is called, then "
+        "/capalis contract approve <id>. Practice runs never call it. 'list' shows contracts and their state."),
     "parameters": {"type": "object", "additionalProperties": False, "required": ["action"], "properties": {
         "action": {"type": "string", "enum": ["propose", "list"]},
         "contract": {**_OBJ, "description": "propose: the contract"},
@@ -236,7 +236,7 @@ COMMAND_HELP = """/capalis                         status
 /capalis revoke <recipe>            withdraw approval
 /capalis export <run>               write a reviewer-friendly evidence bundle (Markdown + JSON)
 /capalis contracts                  other Hermes tools proposed for use in Recipes
-/capalis contract test|approve|revoke <id>   test a proposed tool, then approve or revoke it
+/capalis contract test|approve|revoke <id>   see and run a proposed tool's test, then approve or revoke it
 /capalis cancel <run>               stop a run (an effect already sent stays recorded)
 /capalis prefer recommend|compare|ask   how options are presented to you
 /capalis confirm <run> <step>       confirm a step that needs per-run confirmation
@@ -303,7 +303,9 @@ def command(service: ServiceFactory, ask: Ask | None = None) -> Callable[..., st
             if verb == "contracts":
                 return _format(svc.contracts())
             if verb == "contract" and len(rest) == 2 and rest[0] == "test":
-                return _format(svc.test_contract(rest[1], actor))
+                return _test_with_choice(svc, rest[1], actor, ask)
+            if verb == "contract" and len(rest) == 3 and rest[0] == "test":
+                return _format(svc.test_contract(rest[1], actor, digest=rest[2]))
             if verb == "contract" and len(rest) == 2 and rest[0] == "approve":
                 return svc.approve_contract(rest[1], actor)
             if verb == "contract" and len(rest) == 2 and rest[0] == "revoke":
@@ -325,6 +327,22 @@ def command(service: ServiceFactory, ask: Ask | None = None) -> Callable[..., st
         return COMMAND_HELP
 
     return handle
+
+
+def _test_with_choice(svc: Capalis, capability_id: str, actor: Actor, ask: Ask | None) -> str:
+    """A contract test makes one real call, so the owner sees the exact tool and inputs first. The choice is
+    bound to the contract version shown: if it changes meanwhile, nothing runs."""
+    preview = svc.contract_preview(capability_id, actor)
+    shown = json.dumps(preview["inputs"], indent=2, ensure_ascii=False)
+    question = f"Run a test of {capability_id}? It calls {preview['tool']} once with:\n{shown}"
+    answer = ask(question, [{"value": "run", "label": "Run the test"}, {"value": "cancel", "label": "Not now"}]) \
+        if ask is not None else None
+    if answer is None:
+        return (f"{question}\n\nTo run exactly this, send: /capalis contract test {capability_id} "
+                f"{preview['digest']}")
+    if answer != "run":
+        return "Not run. Nothing was called."
+    return _format(svc.test_contract(capability_id, actor, digest=preview["digest"]))
 
 
 def _approve_with_choice(svc: Capalis, recipe_id: str, actor: Actor, ask: Ask | None) -> str:

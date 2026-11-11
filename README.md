@@ -199,13 +199,13 @@ Anyone whose work runs through chat and who is tired of things falling through t
 | **Small businesses and site owners** | "Check my checkout page every 10 minutes and tell #ops if it's down" | Yes (site watch) |
 | **Open-source maintainers** | Community reports become one issue each, even when people repeat themselves | Yes |
 | **Product teams** | Feedback from a channel becomes issues, and the requester hears back when it ships | Describe it |
-| **Anyone** | "Every weekday at 9, post X in #standup" or "read this file and post a summary" | Describe it (schedules, [other Hermes tools](#using-other-hermes-tools)) |
+| **Anyone** | "Every weekday at 9, post X in #standup" or "each morning, search the web for news about our product and post a summary" | Describe it (schedules, [Hermes's web search](#using-other-hermes-tools)) |
 
 ## For judges
 
 1. **Claims:** [JUDGES.md](JUDGES.md) lists every claim with the tests that prove it, regenerated from a real run. All of them hold.
 2. **Live proof:** [Proof](#proof-what-ran-for-real) lists seven verified runs on real GitHub, Slack, Discord and Telegram accounts.
-3. **Run the suite:** `uv sync --group dev && make check` runs lint, strict typing and 305 tests in about 5 seconds, with no accounts needed.
+3. **Run the suite:** `uv sync --group dev && make check` runs lint, strict typing and 328 tests in about 5 seconds, with no accounts needed.
 4. **Try to break it:** [`tests/integration/test_runner.py`](tests/integration/test_runner.py) crashes mid-write, fakes a success, revokes approval mid-run, changes a dependency and feeds hostile text.
 5. **Read how it's built:**
    - [Architecture](docs/ARCHITECTURE.md)
@@ -258,13 +258,15 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Using other Hermes tools
 
-Capalis's own connections cover GitHub, Slack, Discord, Telegram and web pages. Any other Hermes tool, built-in or from another plugin, can join a Recipe as a step or as an independent check:
+Capalis's own connections cover GitHub, Slack, Discord, Telegram and web pages. Hermes's own web search and page reader (`web_search` and `web_extract`) can also join a Recipe, as a step or as an independent check:
 
-1. The model proposes a **contract** for it: what the tool takes, what it returns, and that it only reads.
-2. You run `/capalis contract test <tool>`, which makes one real call through Hermes and checks the result.
+1. The model proposes a **contract** for the tool: what it takes and what it returns.
+2. You run `/capalis contract test <tool>`. It shows the exact inputs first, and makes one real call through Hermes only when you confirm.
 3. You approve it with `/capalis contract approve <tool>`.
 
-Change the contract and it needs approval again. Revoke it, and every Recipe using it stops. Tools that change things are refused until they can be tested safely in a sandbox.
+Practice runs never call a contracted tool. Change the contract and it needs approval again; revoke it, and every Recipe using it stops.
+
+Other tools, and tools from other plugins, are refused: a contract is written by the model, so it can't be what proves a tool only reads. These two are on Hermes's own list of tools that are safe with untrusted input, and both refuse private addresses themselves.
 
 ## Commands
 
@@ -274,7 +276,7 @@ Change the contract and it needs approval again. Revoke it, and every Recipe usi
 | `/capalis show <recipe>` · `/capalis approve [recipe]` | Review (including what changed) · approve with a button |
 | `/capalis runs` · `/capalis evidence <run>` · `/capalis export <run>` | What happened · the proof · a reviewer bundle |
 | `/capalis pause` · `resume` · `revoke <recipe>` · `cancel <run>` | Stop things |
-| `/capalis contract test\|approve\|revoke <tool>` | Bring another Hermes tool into Recipes |
+| `/capalis contract test\|approve\|revoke <tool>` | Bring Hermes's web search or page reader into Recipes |
 | `/capalis prefer recommend\|compare\|ask` | How options are presented to you |
 
 ### What it touches (disclosure)
@@ -282,10 +284,10 @@ Change the contract and it needs approval again. Revoke it, and every Recipe usi
 - **Network:**
   - `api.github.com`, `slack.com`, `discord.com` and `api.telegram.org`, with your tokens;
   - a Slack webhook, if you set one;
-  - credential-free HTTPS `GET`s to sites an approved Recipe names.
+  - credential-free HTTPS `GET`s to sites an approved Recipe names. Only public addresses: localhost, private networks and cloud metadata addresses are refused when the Recipe is built, before each request, and when connecting.
 
   There is no telemetry.
-- **Other Hermes tools:** only those whose read-only contract you tested and approved, called through `ctx.dispatch_tool`.
+- **Other Hermes tools:** only `web_search` and `web_extract`, under a contract you tested and approved, called through `ctx.dispatch_tool`. Never in a practice run.
 - **Storage:** one SQLite file in Hermes's `plugin-data/capalis/` (Recipes, approvals, runs, redacted payloads), plus evidence exports in `plugin-data/capalis/exports/`. Capalis never reads `.env`, `auth.json` or other tools' credentials.
 - **Messages:**
   - It consumes the messages in channels a Recipe listens to, so the agent doesn't reply there.
@@ -301,13 +303,14 @@ Change the contract and it needs approval again. Revoke it, and every Recipe usi
 - **Telegram can't read back.** Telegram's Bot API has no call that reads a message back. So Telegram carries messages to you (alerts and approval requests) and is never used as proof.
 - **A reply loop caught in design.** A reporter answering "thanks!" to Capalis's acknowledgement would have looked like a new bug. Replies and thread messages never start a run.
 - **Strict drift, on purpose.** Any change to a pinned capability quarantines the Recipe, even a harmless one. That happened live when we added a field to GitHub issues. Rebuilding and re-approving took about a minute, and it's the only rule that can never silently adopt a breaking change.
+- **A catalog review found three gaps, fixed in 0.2.1.** Web checks go to model-written addresses and practice runs read for real, so an internal address is now refused three times: when the Recipe is built, before the request, and at connect time, where the socket goes only to the address that was checked, so a DNS answer can't change in between. Contracts no longer trust the model's own "read-only" label: only Hermes's `web_search` and `web_extract` are accepted, the owner sees a test's exact inputs before it runs, and practice runs never call a contracted tool ([D-044](docs/DECISIONS.md)).
 - **Names for people, ids for Recipes.** People type "#bugs" and "@ada". Recipes pin ids, because names get renamed, and the approval screen shows both.
 
 ## What's real, and what's simulated
 
 | Real | Simulated, by design | Not built yet |
 | --- | --- | --- |
-| A Hermes v0.23.0 plugin that passes `hermes plugins validate` and `doctor` | Practice (shadow) runs simulate writes; that's their purpose | Writes through other plugins' tools (read-only contracts only) |
+| A Hermes v0.23.0 plugin that passes `hermes plugins validate` and `doctor` | Practice (shadow) runs simulate writes and contracted tool calls; that's their purpose | Tools from other plugins (only Hermes's `web_search` and `web_extract` can be contracted) |
 | Real Hermes chats building, comparing, compiling and practicing Recipes | In-memory services in `tests/fakes.py`, used only to inject failures real services can't produce on demand | A dashboard page |
 | GitHub, Slack and Discord on real accounts: the full report-to-reply loop, a live drift quarantine, Slack intake with threaded replies, and a scheduled site watch; Telegram alerts and phone approval | Scripted HTTP replies in adapter tests | Telegram as a place reports come *from* |
 
@@ -315,7 +318,7 @@ Change the contract and it needs approval again. Revoke it, and every Recipe usi
 
 - Writes go only through Capalis's reviewed connections: GitHub Issues, Slack, Discord and Telegram, plus HTTPS reads. Slack webhooks and Telegram can't be read back, so their posts are labeled unverifiable.
 - Waits and schedules check every 30 seconds or more, and need the Hermes gateway running.
-- Contracts for other Hermes tools pass their tests, but haven't run on the owner's accounts yet.
+- Contracts for Hermes's `web_search` and `web_extract` pass their tests, but haven't run on the owner's accounts yet.
 - For reports from Slack or Discord, Hermes itself must listen in that channel and allow the reporters. That's one setting each, set once by the owner. `/capalis setup` prints the exact commands; a plugin isn't allowed to change Hermes's settings.
 - The record's hash chain detects edits; it can't stop someone who rewrites the whole database.
 

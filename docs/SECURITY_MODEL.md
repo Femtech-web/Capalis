@@ -11,7 +11,7 @@ Capalis automates writes to other people's systems, so its first job is to make 
 | **Reporter** (a listed sender in the trigger channel) | Start a run of an approved Recipe | Change what the run does or where it writes |
 | **Everyone else in the channel** | Nothing (messages are refused and logged) | Anything |
 | **Providers** (GitHub, Slack, Discord) | Report what they stored | Have their success reply count as verification |
-| **Other plugins and tools** | Run as read steps or checks after the owner tests and approves their contract | Run before that, or change anything |
+| **Other Hermes tools** | `web_search` and `web_extract` only: run as read steps or checks in an approved Recipe, after the owner saw a test's exact inputs and approved the contract | Run in a practice run or before approval; any other tool, or a tool from another plugin, can't be contracted |
 
 ## Invariants
 
@@ -26,11 +26,13 @@ These promises cover **Capalis-managed steps**, not arbitrary Hermes tool calls.
 | I-05 | Approval is scoped, bound to one version, expires and can be revoked | Grants keyed by digest, re-read before every write | `test_grants_expire_and_revoke`, `test_revoked_approval_blocks_the_next_write` |
 | I-06 | Secrets don't reach storage, logs or evidence | Redaction before every write to the database; tokens only in request headers | `test_canary_secret_never_reaches_disk` (scans database and WAL bytes) |
 | I-07 | A changed dependency blocks the next write until re-approval | Pinned fingerprints, a drift check before each write and in a background sweep | `test_drift_before_a_write_blocks_it_and_quarantines`, `test_drift_sweep_quarantines_without_waiting_for_a_trigger` |
-| I-08 | Shadow runs write nothing | Policy simulates writes; steps after a simulated write are simulated too | `test_shadow_run_writes_nothing` (write counter = 0) |
+| I-08 | Shadow runs write nothing and call no other Hermes tool | Policy simulates writes and contracted tool steps; steps after a simulated step are simulated too | `test_shadow_run_writes_nothing` (write counter = 0) |
 | I-09 | Trigger origin, sender, payload shape and rate are checked before a run exists | Ingress guard, plus rate caps re-checked inside the write transaction | `test_ingress_rejects_wrong_sender_source_and_payload`, `test_hourly_rate_limit` |
 | I-10 | Every run leaves a durable, tamper-evident record and survives restarts | Transactions, leases, hash chain | `test_event_chain_detects_edits`, `test_durable_wait_survives_restart_and_completes` |
 | I-11 | A paused or quarantined Recipe starts no new writes | Runner state checks before each write | `test_global_pause_holds_a_run_and_resume_continues_it` |
 | I-12 | Importing a Recipe never carries over credentials or approvals | Exports hold the plan and its digest only; an import is verified, recompiled locally and starts unapproved | `test_recipe_export_import_carries_no_approval_and_detects_tampering` |
+| I-13 | Web reads never reach a private, loopback, link-local (including 169.254.169.254), carrier-grade NAT, reserved or multicast address | `adapters/net_safety.py`: checked at compile time, before each request, and at connect time, where the socket goes only to the checked address (no DNS rebinding); proxies are bypassed so nothing resolves the name again | `test_web_checks_refuse_internal_addresses_when_compiled`, `test_web_checks_refuse_internal_origins_at_request_time`, `test_the_web_client_never_connects_to_an_internal_address` |
+| I-14 | Only tools known to be safe reads can be contracted; the owner sees a test's inputs before it runs; practice runs never call a contracted tool | `core/contracts.py::READ_TOOLS`; `/capalis contract test` bound to the contract digest; `core/policy.py` simulates `hermes:*` steps in shadow mode | `test_another_hermes_tool_runs_only_after_a_passing_test_and_owner_approval`, `test_a_contract_test_shows_its_inputs_and_runs_only_on_confirmation` |
 
 ## Threats and what stops them
 
@@ -42,7 +44,8 @@ These promises cover **Capalis-managed steps**, not arbitrary Hermes tool calls.
 | Someone else posts in the trigger channel | The sender allowlist (Capalis's own, on top of Hermes's) refuses and logs it. |
 | A bot's own replies retrigger the Recipe | Bot messages are ignored at intake. |
 | A reporter's "thanks!" reply opens a second issue | Replies (Discord replies, Slack thread messages) never start a run. |
-| Another plugin's tool is used to do something unapproved | Other tools run only under an owner-approved, tested, read-only contract; any change sends the contract back to "proposed". |
+| Another plugin's tool, or a tool that runs commands, writes or sends, is used to do something unapproved | Only `web_search` and `web_extract` can be contracted, and only after a test whose inputs the owner saw; any change sends the contract back to "proposed". Practice runs never call them. |
+| A prompt-injected model points a web check at an internal page (localhost, a private network, cloud metadata) | The address is refused at compile time, before the request and at connect time, so practice runs can't read internal pages either. |
 | A scheduled Recipe fires twice, or floods after downtime | Each slot is deduplicated by its minute, and only the latest missed slot fires. |
 | A timeout after the provider stored the write | The effect is looked up by its key before anything is retried; "not found" counts only after the settle window. |
 | A provider answers "ok" but stored something else | The independent read-back disagrees, the step fails and dependents are blocked. |

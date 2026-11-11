@@ -56,7 +56,11 @@ class Capalis:
                  directory: Any = None, alert_channel: Callable[[], str | None] = lambda: None,
                  export_dir: Callable[[], Any] | None = None,
                  dispatch: Callable[[str, dict[str, Any]], Any] | None = None,
-                 has_plugin: Callable[[str], bool] | None = None) -> None:
+                 has_plugin: Callable[[str], bool] | None = None,
+                 check_origin: Callable[[str], str | None] | None = None) -> None:
+        from .adapters.net_safety import check_origin as public_origin
+
+        self.check_origin = check_origin or public_origin
         self.alert_channel = alert_channel
         self.export_dir = export_dir
         self.dispatch = dispatch
@@ -205,13 +209,21 @@ class Capalis:
         version = 1 if latest is None else latest[0].version + 1
         result = compile_recipe(dict(draft), registry, recipe_id=recipe_id, version=version, owner=owner,
                                 workspace=self.workspace, previous_digest=None if latest is None else latest[0].digest)
+        problems = [{"code": p.code, "path": p.path, "message": p.message} for p in result.problems]
+        if result.recipe is not None:
+            # Web reads run for real even in a practice run, so an internal address is refused before storing.
+            problems += [{"code": "E_PRIVATE_ORIGIN", "path": "targets",
+                          "message": f"{reason}; Capalis only reads public addresses"}
+                         for target in sorted(result.recipe.targets) if target.kind == "http.origin"
+                         for reason in [self.check_origin(target.value)] if reason is not None]
+        ok = result.ok and not problems
         report: dict[str, Any] = {
-            "ok": result.ok,
-            "problems": [{"code": p.code, "path": p.path, "message": p.message} for p in result.problems],
+            "ok": ok,
+            "problems": problems,
             "setup_needed": [{"capability": s.capability_id, "availability": s.availability.value,
                               "credential": s.auth_requirement} for s in result.setup_needed],
         }
-        if result.recipe is not None and result.ok:
+        if result.recipe is not None and ok:
             self.store.save_recipe(result.recipe)
             report.update(self.describe(result.recipe))
         return report
@@ -638,15 +650,28 @@ class Capalis:
                 "next": f"Ask the owner to run /capalis contract test {spec.capability_id}, look at the sample "
                         f"output, then /capalis contract approve {spec.capability_id}."}
 
-    def test_contract(self, capability_id: str, actor: Actor) -> dict[str, Any]:
+    def contract_preview(self, capability_id: str, actor: Actor) -> dict[str, Any]:
+        """What a contract test would run, shown to the owner before anything is called."""
+        self.authorize_actor(actor)
+        row = self._contract(capability_id)
+        return {"capability": capability_id, "tool": row["spec"]["tool"], "inputs": row["spec"]["sample_inputs"],
+                "digest": row["digest"][7:19]}
+
+    def test_contract(self, capability_id: str, actor: Actor, *, digest: str) -> dict[str, Any]:
+        """Runs the sample inputs the owner was shown: ``digest`` must name the contract version they saw."""
         from .adapters.hermes_tools import parse_reply
         from .core import schema as jsonschema
         from .core.contracts import parse_contract
 
         self.authorize_actor(actor)
         row = self._contract(capability_id)
+        if len(digest) < 12 or not row["digest"].removeprefix("sha256:").startswith(digest.removeprefix("sha256:")):
+            raise ServiceError(f"the contract changed since you saw it; run /capalis contract test {capability_id} "
+                               "again to see its inputs")
         spec, _ = parse_contract(row["spec"])
-        if spec is None or self.dispatch is None:
+        if spec is None:
+            raise ServiceError(f"{capability_id} is no longer an acceptable contract")
+        if self.dispatch is None:
             raise ServiceError("contract tests need the Hermes runtime")
         if spec.plugin and self.has_plugin is not None and not self.has_plugin(spec.plugin):
             raise ServiceError(f"the plugin {spec.plugin} is not installed and enabled")
