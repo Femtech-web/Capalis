@@ -20,6 +20,9 @@ dist/
 build/
 *.egg-info/
 
+# Marketing film workspace: footage, audio and renders stay local
+/marketing/
+
 # Local development tooling and pinned Hermes test install
 /.dev/
 /.venv/

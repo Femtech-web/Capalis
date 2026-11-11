@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=block" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0b0e;
+    --surface: #121419;
+    --line: #23262e;
+    --text: #f4f5f7;
+    --muted: #8b919e;
+    --accent: #3ecf8e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1200px; height: 600px; }
+  body {
+    font-family: "Geist", -apple-system, sans-serif;
+    background:
+      radial-gradient(560px 420px at 78% 50%, rgba(62, 207, 142, 0.07), transparent 70%),
+      var(--bg);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    padding: 0 72px;
+    gap: 52px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .left { flex: 1; }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 40px; }
+  .mark {
+    width: 40px; height: 40px; border-radius: 11px; background: var(--accent);
+    display: grid; place-items: center;
+  }
+  .wordmark { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; }
+  h1 { font-size: 50px; line-height: 1.06; font-weight: 600; letter-spacing: -0.035em; }
+  h1 span { color: var(--muted); }
+  p.sub { margin-top: 24px; font-size: 19px; line-height: 1.5; color: var(--muted); max-width: 440px; }
+
+  .right { width: 470px; display: flex; flex-direction: column; gap: 14px; }
+  .who { font-size: 14px; color: var(--muted); margin: 0 0 8px 4px; }
+  .bubble {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 18px 18px 18px 6px;
+    padding: 16px 20px; font-size: 17px; line-height: 1.45; color: #dfe2e8;
+  }
+  .bubble b { color: var(--text); font-weight: 500; }
+  .link { display: flex; align-items: center; gap: 10px; padding-left: 22px; color: var(--muted); font-size: 14px; }
+  .link i { width: 1px; height: 20px; background: var(--line); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 8px 20px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 0; font-size: 17px; }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row .t { flex: 1; color: #e6e8ec; }
+  .row .k { color: var(--muted); font-size: 15px; }
+  .ok { width: 20px; height: 20px; border-radius: 50%; background: rgba(62, 207, 142, 0.14); display: grid; place-items: center; }
+</style>
+</head>
+<body>
+  <div class="left">
+    <div class="brand">
+      <div class="mark">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#0a0b0e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="wordmark">Capalis</div>
+    </div>
+    <h1>One sentence.<br><span>A job you can trust.</span></h1>
+    <p class="sub">Describe it in plain words. Capalis picks the tools, you approve once, and it checks every result.</p>
+  </div>
+
+  <div class="right">
+    <div>
+      <div class="who">You, in Hermes</div>
+      <div class="bubble">When someone reports a bug in <b>#bugs</b>, open an issue in <b>my-app</b>, tell <b>#engineering</b> and reply to them.</div>
+    </div>
+    <div class="link"><i></i>Approved once, then it runs on its own</div>
+    <div class="card">
+      <div class="row"><span class="ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#3ecf8e" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t">Issue #6 opened in GitHub</span><span class="k">checked</span></div>
+      <div class="row"><span class="ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#3ecf8e" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t">#engineering told in Slack</span><span class="k">checked</span></div>
+      <div class="row"><span class="ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#3ecf8e" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="t">Reporter updated in Discord</span><span class="k">checked</span></div>
+    </div>
+  </div>
+</body>
+</html>
