@@ -1,5 +1,7 @@
 # Private development workspace: never committed
 /private-notes/
+/AGENTS.md
+/CLAUDE.md
 
 # Secrets
 .env
